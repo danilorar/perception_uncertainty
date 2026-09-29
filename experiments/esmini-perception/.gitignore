@@ -1,0 +1,28 @@
+# Local operating-system/editor files and Python environments.
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+.vscode/
+
+# Download esmini separately; do not commit binaries or third-party source trees.
+/simulation/esmini-demo/
+/simulation/esmini/
+/simulation/OSC-NCAP-scenarios-main/
+
+# Previous Vector/NCAP experiments are retained locally, outside this workflow.
+/simulation/aeb/
+/simulation/Run AEB comparison.command
+/simulation/Run Vector CCRs 50kmh.command
+/simulation/Run cut-in demo.command
+
+# Run products and pre-refactor snapshots. Generated XOSC inputs ARE tracked.
+/simulation/results/
+/simulation/archive/
+/results/
+*.log
+*.dat
+
+# Course documents are not part of the simulation code/data repository.
+/Files/
+/Meeting Discussions with Supervisors/
