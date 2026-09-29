@@ -2,9 +2,11 @@
 *.log
 log.txt
 
-# Python tools
+# Cache and temporary files
 .pytest_cache/
 .ipynb_checkpoints/
+*.pyc
+pycache/
 
 # Build output
 build/
@@ -16,6 +18,7 @@ Thumbs.db
 # VS Code settings
 .vscode/
 .venv/
+pycache/
 
 # Others
 *.AppImage
