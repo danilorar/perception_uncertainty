@@ -1,16 +1,21 @@
-OpenScenarioDrive-Linux-x86_64.AppImage
-.venv 
-.vscode
+# Generated logs
+*.log
+log.txt
 
-# Python cache
-__pycache__/
-*.pyc
+# Python tools
+.pytest_cache/
+.ipynb_checkpoints/
 
+# Build output
+build/
 
-# Ignore all files in the esmini-demo directory except results and scripts
-esmini-demo/*
-!esmini-demo/results/
-!esmini-demo/results/**
-!esmini-demo/scripts/
-!esmini-demo/scripts/**
+# macOS and Windows files
+.DS_Store
+Thumbs.db
 
+# VS Code settings
+.vscode/
+.venv/
+
+# Others
+*.AppImage
