@@ -8,11 +8,11 @@ import time
 from pathlib import Path
 from perception_model import PerceptionModel
 
+# NOTE: Args in ipynb will override these
 
 # DIRECTORY STRUCTURE
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIO = PROJECT_ROOT / "OSC-NCAP-scenarios" / "OpenSCENARIO" / "NCAP" / "AEB_C2C_2023" / "NCAP_AEB_C2C_CCFhol_2023.xosc"
-OUTPUT = PROJECT_ROOT / "results" / "noisy_sensor.csv"
 MODEL_PATH = PROJECT_ROOT / "esmini" / "resources" / "models"
 DURATION = None # set a number to impose a time limit.
 
@@ -34,8 +34,6 @@ ENABLE_PERCEPTION_NOISE = True
 perception_model = PerceptionModel(seed=42)
 
 
-# CONTROLLER CONFIGURATION
-CONTROLLER = "scenario-defined"
 ENABLE_AEB = True
 AEB_TTC_THRESHOLD = 2.0
 AEB_BRAKE_DECELERATION = 8.0
@@ -46,7 +44,7 @@ AEB_LANE_HALF_WIDTH = 4.0
 REALTIME_FACTOR = 2.5 # Higher -> faster
 USE_VIEWER = True
 VIEW_SENSOR_FRUSTUMS = True 
-VIEWER_THREADS = 2 
+VIEWER_THREADS = 1
 KEEP_VIEWER_OPEN = True
 
 class ScenarioObjectState(ct.Structure):
@@ -187,11 +185,12 @@ def parse_args():
     built_library = esmini_root / "build" / "EnvironmentSimulator" / "Libraries" / "esminiLib" / "libesminiLib.so"
     if not default_library.exists() and built_library.exists():
         default_library = built_library
+        
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", type=Path, default=SCENARIO)
     parser.add_argument("--ego-id", type=int, default=EGO_ID)
-    parser.add_argument("--controller", default=CONTROLLER)
-    parser.add_argument("--output", type=Path, default=OUTPUT)
+    parser.add_argument("--controller", default="scenario-defined")
+    parser.add_argument("--output", type=Path, default=PROJECT_ROOT / "results" / "ideal_sensor.csv")
     parser.add_argument("--library", type=Path, default=default_library)
     parser.add_argument("--sensor-x", type=float, default=SENSOR_X)
     parser.add_argument("--sensor-y", type=float, default=SENSOR_Y)
@@ -204,6 +203,26 @@ def parse_args():
     parser.add_argument("--dt", type=float, default=DT)
     parser.add_argument("--duration", type=float, default=DURATION)
     parser.add_argument("--realtime-factor", type=float, default=REALTIME_FACTOR)
+
+    # SEQUENTIAL RUNNING 
+    parser.add_argument(
+        "--perception-noise",
+        action=argparse.BooleanOptionalAction,
+        default=ENABLE_PERCEPTION_NOISE,
+        help="Enable or disable distance measurement noise",
+    )
+    parser.add_argument(
+        "--viewer",
+        action=argparse.BooleanOptionalAction,
+        default=USE_VIEWER,
+        help="Enable or disable the esmini viewer",
+    )
+    parser.add_argument(
+        "--keep-viewer-open",
+        action=argparse.BooleanOptionalAction,
+        default=KEEP_VIEWER_OPEN,
+        help="Keep the viewer open after the simulation finishes",
+    )
     return parser.parse_args()
 
 
@@ -270,7 +289,7 @@ def main():
         raise RuntimeError("Could not disable esmini console logging")
     if library.SE_SetOptionValue(b"path", str(MODEL_PATH.resolve()).encode()) != 0:
         raise RuntimeError(f"Could not set esmini model path: {MODEL_PATH}")
-    viewer_mode = 1 if USE_VIEWER else 0
+    viewer_mode = 1 if args.viewer else 0
     if library.SE_Init(scenario, 0, viewer_mode, VIEWER_THREADS, 0) != 0:
         raise RuntimeError(f"Could not initialize scenario: {args.scenario}")
 
@@ -293,7 +312,7 @@ def main():
         raise RuntimeError(f"Could not attach sensor to object {args.ego_id}")
     
     # Enable viewer and show sensor frustums if specified
-    if USE_VIEWER and VIEW_SENSOR_FRUSTUMS:
+    if args.viewer and VIEW_SENSOR_FRUSTUMS:
         library.SE_ViewerShowFeature(1, True)
 
     columns = [
@@ -311,7 +330,7 @@ def main():
         with args.output.open("w", newline="") as output_file:
             writer = csv.DictWriter(output_file, fieldnames=columns)
             writer.writeheader()
-            print_table_header()
+            # print_table_header()
             step = 0
             
             # Run the simulation loop until the specified duration is reached, fetching object states and sensor detections at each time step
@@ -365,7 +384,7 @@ def main():
                     perceived_distance = true_distance 
                     distance_error = 0.0
                     
-                    if ENABLE_PERCEPTION_NOISE and object_id in detected_ids:
+                    if args.perception_noise and object_id in detected_ids:
                         # Apply perception model to add noise to the perceived distance 
                         measurement = perception_model.measure_distance(true_distance) 
                         perceived_distance = measurement["perceived_distance"]
@@ -402,12 +421,13 @@ def main():
                         raise RuntimeError("Could not apply AEB speed command")
                 
                 if ENABLE_AEB:
-                    print(
-                        f"AEB: {controller_state:10s} target={aeb_target_id} "
-                        f"ttc={'inf' if math.isinf(ttc) else f'{ttc:.2f}'} "
-                        f"ego_speed={ego.speed:.2f} command={commanded_speed:.2f}",
-                        flush=True,
-                    )
+                    # print(
+                    #     f"AEB: {controller_state:10s} target={aeb_target_id} "
+                    #     f"ttc={'inf' if math.isinf(ttc) else f'{ttc:.2f}'} "
+                    #     f"ego_speed={ego.speed:.2f} command={commanded_speed:.2f}",
+                    #     flush=True,
+                    # )
+                    pass  # to reduce console output during evaluation
 
                 for object_id, target in states.items():
                     if object_id == args.ego_id: # skip if id = ego object
@@ -418,17 +438,8 @@ def main():
                     distance = math.sqrt(relative_x ** 2 + relative_y ** 2)
                     bearing = math.degrees(math.atan2(relative_y, relative_x))
                     
-                    print_table_row(
-                        step,
-                        current_time,
-                        object_id,
-                        target,
-                        object_id in detected_ids,
-                        distance,
-                        bearing,
-                        relative_x,
-                        relative_y,
-                    )
+                    
+                    # print_table_row(step, current_time, object_id, target, object_id in detected_ids, distance, bearing, relative_x, relative_y,)
                     
                     # Save as CSV
                     writer.writerow({
@@ -474,12 +485,12 @@ def main():
                 if args.realtime_factor > 0:
                     time.sleep(args.dt / args.realtime_factor)
 
-            if USE_VIEWER and KEEP_VIEWER_OPEN:
+            if args.viewer and args.keep_viewer_open:
                 input("Simulation complete. Press Enter to close the esmini viewer... ")
     finally:
         library.SE_Close()
 
-    print(f"Wrote evaluation results to {args.output.resolve()}")
+    print(f"Saving results to {args.output.resolve()}")
 
 
 if __name__ == "__main__":
