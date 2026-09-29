@@ -14,3 +14,35 @@ esmini-demo/*
 !esmini-demo/scripts/
 !esmini-demo/scripts/**
 
+# Aron: local environments and downloaded simulator packages
+.venv/
+/esmini-lab/downloads/
+/esmini-lab/runtime/
+/esmini-lab/sources/
+/esmini-lab/tmp/
+/esmini-lab/imgui.ini
+
+# Generated experiments, reference caches, verification evidence, and backups
+/simulation-studio/references/
+/simulation-studio/assets/ncap/**/_reference*.xosc
+/simulation-studio/runs/
+/simulation-studio/batches/
+/simulation-studio/verification/
+/simulation-studio/work/
+/simulation-studio/server.json
+/simulation-studio/*.log
+/esmini-lab/runs/
+/esmini-lab/evidence/
+/work/
+
+# Local course paperwork, separate from the runnable project
+/uploaded file/
+/H - Perception Models For Autonomous Driving In Virtual Simulations.pdf
+
+# Local credentials and editor/OS state
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+

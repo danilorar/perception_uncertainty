@@ -1,0 +1,21 @@
+{
+  "scenario": "gidas_1549178",
+  "ego_speed_kph": 44.039346044190886,
+  "ego_heading_deg": 8.320000357186002,
+  "uncertainty": "distance_gaussian_range",
+  "range_bias_m": 0.0,
+  "range_sigma_m": 1.0,
+  "noise_zero_range_m": 3.0,
+  "noise_reference_range_m": 100.0,
+  "noise_reference_mae_pct": 50.0,
+  "sensor_range_m": 150.0,
+  "sensor_fov_deg": 180.0,
+  "seed": 1,
+  "controller": "aeb",
+  "ttc_threshold_s": 1.5,
+  "brake_decel_mps2": 8.0,
+  "reaction_delay_s": 0.1,
+  "duration_s": 9.98,
+  "dt_s": 0.01,
+  "export_video": true
+}

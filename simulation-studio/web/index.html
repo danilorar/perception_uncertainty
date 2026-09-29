@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simulation Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="workspace">
+  <div class="brand" aria-label="Simulation Studio" title="Simulation Studio"><span class="brand-icon">S</span></div>
+  <div class="result-head">
+    <h1 id="resultTitle" data-i18n="preview">实验预览</h1>
+    <div class="header-controls">
+      <span id="statusBadge" class="status" role="status" data-i18n="ready">就绪</span>
+      <div class="language-switch" role="group" aria-label="界面语言" data-i18n-aria-label="language">
+        <button type="button" data-language="zh" lang="zh-CN" aria-pressed="true" title="切换到中文">中文</button>
+        <button type="button" data-language="en" lang="en" aria-pressed="false" aria-label="English" title="Switch to English">EN</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="configuration" aria-labelledby="configTitle">
+    <div class="config-heading">
+      <div class="config-title"><h2 id="configTitle" data-i18n="settings">实验设置</h2></div>
+      <div class="config-actions">
+        <button id="loadConfig" class="quiet" data-i18n="loadConfigShort" aria-label="载入配置" data-i18n-aria-label="loadConfig" title="载入配置" data-i18n-title="loadConfig">载入</button>
+        <button id="saveConfig" class="quiet" data-i18n="saveConfigShort" aria-label="保存配置" data-i18n-aria-label="saveConfig" title="保存配置" data-i18n-title="saveConfig">保存</button>
+        <input id="configFile" type="file" accept=".json" hidden>
+      </div>
+    </div>
+    <div id="formError" role="alert"></div>
+    <form id="configForm">
+      <div class="settings-grid">
+        <section class="step" aria-labelledby="step1">
+          <div class="step-title">
+            <span class="step-number">01</span><h3 id="step1" data-i18n="step1">选择场景</h3>
+            <button id="scenarioInfoButton" type="button" class="info-button" popovertarget="scenarioInfo" aria-controls="scenarioInfo" aria-expanded="false" aria-label="场景说明" data-i18n-aria-label="scenarioInfo"><span aria-hidden="true">i</span></button>
+          </div>
+          <label for="scenario" data-i18n="scenario">数据场景</label><select id="scenario" aria-describedby="scenarioDescription"></select>
+        </section>
+
+        <section class="step" aria-labelledby="step2">
+          <div class="step-title"><span class="step-number">02</span><h3 id="step2" data-i18n="step2">设置自车</h3></div>
+          <div class="grid2 ego-fields">
+            <div><label for="ego_speed_kph"><span data-i18n="ego_speed_kph">初始速度</span> <em>km/h</em></label><input id="ego_speed_kph" type="number" min="0" max="120" step="any" required></div>
+            <div><label for="ego_heading_deg"><span data-i18n="ego_heading_deg">初始航向</span> <em>°</em></label><input id="ego_heading_deg" type="number" min="-180" max="180" step="any" aria-describedby="headingHint" required></div>
+          </div>
+          <p class="hint" id="headingHint" data-i18n="headingHint">初速由轨迹前 0.20 秒估算，航向读取首帧（世界坐标）。</p>
+          <p class="hint" id="egoModeHint"></p>
+        </section>
+
+        <section class="step" aria-labelledby="step3">
+          <div class="step-title"><span class="step-number">03</span><h3 id="step3" data-i18n="step3">感知条件</h3></div>
+          <p class="hint" data-i18n="sensorPipeline">esmini 理想传感器 → 误差模型 → 距离估计 → 控制器</p>
+          <label for="uncertainty" data-i18n="uncertainty">误差模型</label>
+          <select id="uncertainty"><option value="recorded_truth" data-i18n="recordedOption">理想探测 · 不附加误差</option><option value="distance_gaussian_range" data-i18n="distanceNoiseOption">随距离增大的高斯误差</option></select>
+          <div id="distanceNoiseFields" hidden>
+            <div class="grid2">
+              <div><label for="noise_zero_range_m"><span data-i18n="noise_zero_range_m">零误差距离</span> <em>m</em></label><input id="noise_zero_range_m" type="number" min="0" max="499" step="0.1" required></div>
+              <div><label for="noise_reference_range_m"><span data-i18n="noise_reference_range_m">参考距离</span> <em>m</em></label><input id="noise_reference_range_m" type="number" min="1" max="500" step="1" required></div>
+            </div>
+            <div class="field"><label for="noise_reference_mae_pct"><span data-i18n="noise_reference_mae_pct">参考处平均绝对误差</span> <em>%</em></label><input id="noise_reference_mae_pct" type="number" min="0" max="100" step="1" required></div>
+            <p id="distanceNoiseHint" class="hint" aria-live="polite"></p>
+          </div>
+          <div class="grid2 noise-fields" id="noiseFields" hidden>
+            <div><label for="range_bias_m"><span data-i18n="range_bias_m">偏差 μ</span> <em>m</em></label><input id="range_bias_m" type="number" min="-30" max="30" step="0.1" required></div>
+            <div><label for="range_sigma_m"><span data-i18n="range_sigma_m">标准差 σ</span> <em>m</em></label><input id="range_sigma_m" type="number" min="0" max="20" step="0.1" required></div>
+          </div>
+          <div class="grid2">
+            <div><label for="sensor_range_m"><span data-i18n="sensor_range_m">感知范围</span> <em>m</em></label><input id="sensor_range_m" type="number" min="1" max="500" step="1" required></div>
+            <div><label for="sensor_fov_deg"><span data-i18n="sensor_fov_deg">视场角</span> <em>°</em></label><input id="sensor_fov_deg" type="number" min="1" max="360" step="1" required></div>
+          </div>
+          <div id="seedField" hidden><label for="seed" data-i18n="seed">随机种子</label><input id="seed" type="number" min="0" max="2147483647" step="1" required></div>
+          <div id="observationPeriodField" hidden>
+            <label for="observation_period_s"><span data-i18n="observation_period_s">观测更新周期</span> <em>s</em></label>
+            <select id="observation_period_s"><option value="0.02">0.02 · 50 Hz</option><option value="0.05">0.05 · 20 Hz</option><option value="0.1">0.10 · 10 Hz</option><option value="0" data-i18n="legacyClock">跟随仿真步长 · 旧版</option></select>
+          </div>
+          <details id="kalmanFields" class="field-details" hidden><summary data-i18n="kalmanParameters">估计器参数</summary>
+            <label for="kalman_noise_mode" data-i18n="kalman_noise_mode">测距噪声假设</label>
+            <select id="kalman_noise_mode"><option value="predicted_range" data-i18n="predictedNoiseOption">随预测距离调整</option><option value="fixed" data-i18n="fixedNoiseOption">固定标准差 · 对照</option></select>
+            <label for="kalman_range_sigma_m"><span data-i18n="kalman_range_sigma_m">估计器假定测距标准差</span> <em>m</em></label><input id="kalman_range_sigma_m" type="number" min="0.1" max="200" step="0.1" required>
+            <label for="kalman_accel_sigma_mps2"><span data-i18n="kalman_accel_sigma_mps2">运动变化标准差</span> <em>m/s²</em></label><input id="kalman_accel_sigma_mps2" type="number" min="0.1" max="20" step="0.1" required>
+            <label for="kalman_warmup_s"><span data-i18n="kalman_warmup_s">跟踪建立时间</span> <em>s</em></label><input id="kalman_warmup_s" type="number" min="0" max="1" step="0.01" required>
+            <p class="hint" data-i18n="kalmanHint">这些参数只影响估计器，不改变误差抽样。目标速度、方位仍假定准确。无误差模式直接使用准确距离。</p>
+          </details>
+          <details class="field-details"><summary data-i18n="perceptionHelp">感知说明</summary><p class="hint" data-i18n="perceptionHelpText">所有模式先由 esmini 理想传感器探测，再对中心距离添加误差。零误差模式也受范围和视场限制。不模拟遮挡、随机漏检或速度误差。</p></details>
+        </section>
+
+        <section class="step" aria-labelledby="step4">
+          <div class="step-title"><span class="step-number">04</span><h3 id="step4" data-i18n="step4">控制策略</h3></div>
+          <label for="controller" data-i18n="controller">控制器</label>
+          <select id="controller"><option value="original_trajectory" data-i18n="replayOption">原始轨迹回放 · 默认</option><option value="aeb_follow" data-i18n="aebFollowOption">AEB · 原始轨迹接管</option><option value="aeb" data-i18n="aebOption">AEB · 恒速起步</option></select>
+          <div class="preset-actions"><button type="button" id="recommendedAeb" class="quiet" data-i18n="recommendedAeb">推荐 AEB 设置</button></div>
+          <div id="aebFields" class="aeb-fields">
+            <div class="field"><label for="aeb_trigger_mode" data-i18n="aeb_trigger_mode">触发方式</label><select id="aeb_trigger_mode"><option value="confirmed" data-i18n="confirmedOption">持续确认后制动</option><option value="instant" data-i18n="instantOption">单帧触发并保持 · 对照</option></select></div>
+            <div class="field" id="confirmationField"><label for="aeb_confirmation_s"><span data-i18n="aeb_confirmation_s">危险持续确认</span> <em>s</em></label><input id="aeb_confirmation_s" type="number" min="0" max="1" step="0.01" required></div>
+            <div class="grid2">
+              <div><label for="ttc_threshold_s"><span data-i18n="ttc_threshold_s">触发阈值</span> <em>s</em></label><input id="ttc_threshold_s" type="number" min="0.1" max="5" step="0.1" required></div>
+              <div><label for="brake_decel_mps2"><span data-i18n="brake_decel_mps2">减速度</span> <em>m/s²</em></label><input id="brake_decel_mps2" type="number" min="0.1" max="12" step="0.1" required></div>
+            </div>
+            <div class="field"><label for="reaction_delay_s"><span data-i18n="reaction_delay_s">响应延迟</span> <em>s</em></label><input id="reaction_delay_s" type="number" min="0" max="2" step="0.01" required></div>
+          </div>
+          <p id="constantSpeedHint" class="hint" hidden data-i18n="constantHint">保持初始速度，用于对照制动效果。</p>
+          <p id="replayHint" class="hint" data-i18n="replayHint">两辆车按原始轨迹回放，保留原有减速和方向变化；感知设置仅影响观测曲线。</p>
+          <p id="followHint" class="hint" hidden data-i18n="followHint">介入前保留原有减速；实际开始制动后，由 AEB 沿原路径更新车速，替代原驾驶行为。</p>
+          <details class="field-details"><summary data-i18n="modelHelp">模型说明</summary><p class="hint" data-i18n="modelHelpText">按预测接触时间触发制动。当前为未标定的规则原型，参数是实验假设；正式 AEB-s 模型尚未接入。</p></details>
+        </section>
+
+        <section class="step" aria-labelledby="step5">
+          <div class="step-title"><span class="step-number">05</span><h3 id="step5" data-i18n="step5">运行输出</h3></div>
+          <div class="grid2">
+            <div><label for="duration_s"><span data-i18n="duration_s">原版运行时长</span> <em>s</em></label><input id="duration_s" type="text" readonly aria-describedby="outputHint"></div>
+            <div><label for="dt_s"><span data-i18n="dt_s">时间步长</span> <em>s</em></label><select id="dt_s"><option value="0.01">0.01</option><option value="0.02">0.02</option><option value="0.05">0.05</option></select></div>
+          </div>
+          <label class="check"><input id="export_video" type="checkbox"> <span data-i18n="exportVideo">导出 MP4 视频</span></label>
+          <p class="hint" id="outputHint" data-i18n="outputHint">时长固定为所选场景原版基准的结束时间。记录首次碰撞，运行至该时刻；曲线和 CSV 自动保存。</p>
+        </section>
+      </div>
+    </form>
+    <div class="config-run-actions">
+        <button id="cancelButton" type="button" class="secondary" hidden data-i18n="stopRun">停止实验</button>
+        <button id="runButton" type="submit" form="configForm" class="primary">运行实验 <span aria-hidden="true">→</span></button>
+    </div>
+  </section>
+
+  <div class="metrics" aria-label="本次实验指标" data-i18n-aria-label="metrics">
+    <div class="metric collision-card" id="collisionCard">
+      <small data-i18n="collision">碰撞结果</small><strong id="collisionMetric">—</strong>
+    </div>
+    <div class="metric"><small data-i18n="impact">碰撞时自车速度</small><strong id="impactMetric">—</strong></div>
+    <div class="metric"><small data-i18n="braking">开始制动</small><strong id="brakeMetric">—</strong></div>
+  </div>
+
+  <section class="results" id="resultsArea" aria-label="视频与数据" data-i18n-aria-label="results">
+    <div id="progressWrap" aria-live="polite" hidden>
+      <div class="progress"><div id="progressFill"></div></div><p id="progressText"></p>
+    </div>
+    <div class="view-panel">
+      <nav class="tabs" aria-label="结果视图" data-i18n-aria-label="views" role="tablist">
+        <button id="tab-video" role="tab" aria-selected="true" aria-controls="resultViewer" data-tab="video" class="selected" data-i18n="video">场景视频</button>
+        <button id="tab-speed" role="tab" aria-selected="false" aria-controls="resultViewer" tabindex="-1" data-tab="speed" data-i18n="speed">速度曲线</button>
+        <button id="tab-range" role="tab" aria-selected="false" aria-controls="resultViewer" tabindex="-1" data-tab="range" data-i18n="range">距离与误差</button>
+      </nav>
+      <div class="viewer" id="resultViewer" role="tabpanel" aria-labelledby="tab-video" tabindex="0">
+        <div id="emptyView">
+          <svg class="empty-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true"><rect x="5" y="8" width="38" height="29" rx="5"/><path d="m21 17 10 6-10 6V17Z"/><path d="M17 42h14"/></svg>
+          <h3 data-i18n="emptyTitle">准备好，开始一次实验</h3><p data-i18n="emptyDescription">在实验设置中调整参数，点击「运行实验」。</p>
+        </div>
+        <video id="videoView" controls preload="metadata" aria-label="本次实验场景视频" data-i18n-aria-label="videoLabel" hidden></video>
+        <img id="plotView" alt="本次实验的结果曲线" data-i18n-alt="plotLabel" hidden>
+      </div>
+    </div>
+    <details id="assessmentPanel" class="assessment-panel" hidden>
+      <summary data-i18n="assessmentTitle">制动与感知诊断</summary>
+      <div class="assessment-grid">
+        <div><small data-i18n="brakeAdvance">相对理想感知提前制动</small><strong id="advanceMetric">—</strong></div>
+        <div><small data-i18n="brakeRange">开始制动时真实中心距离</small><strong id="brakeRangeMetric">—</strong></div>
+        <div><small data-i18n="rangeRmse">同帧 RMSE：观测 → 估计</small><strong id="rmseMetric">—</strong></div>
+        <div><small data-i18n="confirmationCancelled">取消的待确认事件</small><strong id="cancelledMetric">—</strong></div>
+      </div>
+      <p id="assessmentNote" class="hint"></p>
+    </details>
+    <div class="result-footer">
+      <p id="resultNote" class="result-note"></p>
+      <div class="result-actions">
+        <div class="downloads" id="downloads" hidden>
+          <button id="openFolder" class="quiet" data-i18n="openFolder">打开结果文件夹 ↗</button>
+          <details class="download-menu">
+            <summary data-i18n="exportData">导出数据</summary>
+            <div class="download-list"><a id="csvLink" data-i18n="egoCsv">自车 CSV ↓</a><a id="obsLink" data-i18n="obsCsv">观测 CSV ↓</a><a id="truthLink" data-i18n="truthCsv">真值 CSV ↓</a><a id="summaryLink" data-i18n="summaryFile">结果摘要 ↓</a><a id="videoLink" data-i18n="videoFile">MP4 视频 ↓</a></div>
+          </details>
+        </div>
+        <details class="method-note">
+          <summary data-i18n="resultHelp">结果说明</summary>
+          <p data-i18n="resultHelpText">碰撞按真值包围盒重叠判定；「未碰撞」仅指本次仿真时限内。视频来自本次保存的运动数据。固定目标轨迹实验不代表完整 NCAP 认证测试。</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="history-panel" aria-labelledby="historyTitle">
+    <div class="panel-top">
+      <h2 id="historyTitle"><span data-i18n="history">历史记录</span> <span id="historyCount" class="count">0</span></h2>
+      <button id="refreshHistory" class="quiet" title="刷新历史记录" data-i18n-title="refreshHistory" data-i18n="refresh">刷新</button>
+    </div>
+    <p id="historyEmpty" class="hint" data-i18n="historyEmpty">运行后自动保存在这里</p>
+    <div id="history" tabindex="0" aria-label="历史实验，可滚动查看" data-i18n-aria-label="historyScroll"></div>
+  </section>
+
+  <div class="app-tools"><button id="shutdown" class="quiet" title="关闭网页只关闭界面，后台服务和正在运行的实验仍会继续。此按钮停止后台服务；请先完成或停止实验。" data-i18n-title="shutdownHint" data-i18n="shutdown">停止后台服务</button></div>
+</main>
+<div id="scenarioInfo" class="scenario-popover" popover="auto" role="region" aria-labelledby="scenarioInfoTitle">
+  <div class="scenario-info-heading"><h3 id="scenarioInfoTitle" data-i18n="scenarioInfo">场景说明</h3><span id="roadLabel" class="road-badge"></span></div>
+  <p id="scenarioDescription" class="hint"></p>
+  <h4 data-i18n="fixedObjects">固定对象</h4>
+  <div id="fixedObjects"></div>
+  <p class="hint" data-i18n="fixedHint">目标按基准轨迹回放，不随自车设置改变。</p>
+</div>
+<div id="toast" role="status" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,3 +1,10 @@
+## Aron branch: Simulation Studio
+
+This branch adds Aron's Windows simulation application, perception uncertainty,
+Kalman filtering, AEB experiments, and three supplied GIDAS scenarios.
+Start with [Aron's setup and project guide](README.Aron.md).
+The original group setup is retained below for reference.
+
 #### Setup
 
 1. Open a terminal and run:
