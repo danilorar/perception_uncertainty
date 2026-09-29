@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Evaluate an esmini ideal object sensor and write step-by-step CSV results."""
 
 import argparse
@@ -7,18 +6,19 @@ import ctypes as ct
 import math
 import time
 from pathlib import Path
-
+from perception_model import PerceptionModel
 
 
 # DIRECTORY STRUCTURE
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIO = PROJECT_ROOT / "OSC-NCAP-scenarios" / "OpenSCENARIO" / "NCAP" / "AEB_C2C_2023" / "NCAP_AEB_C2C_CCFhol_2023.xosc"
-OUTPUT = PROJECT_ROOT / "results" / "ideal_sensor.csv"
+OUTPUT = PROJECT_ROOT / "results" / "noisy_sensor.csv"
 MODEL_PATH = PROJECT_ROOT / "esmini" / "resources" / "models"
+DURATION = None # set a number to impose a time limit.
+
 
 # SENSOR CONFIGURATION
 EGO_ID = 0 
-CONTROLLER = "scenario-defined"
 SENSOR_X = 4.0
 SENSOR_Y = 0.0
 SENSOR_Z = 0.5
@@ -28,9 +28,14 @@ FAR_RANGE = 80.0
 FOV_DEG = 70.0
 MAX_DETECTIONS = 100
 DT = 0.05
-DURATION = None # set a number to impose a time limit.
+
+# PERCEPTION MODEL CONFIGURATION
+ENABLE_PERCEPTION_NOISE = True 
+perception_model = PerceptionModel(seed=42)
+
 
 # CONTROLLER CONFIGURATION
+CONTROLLER = "scenario-defined"
 ENABLE_AEB = True
 AEB_TTC_THRESHOLD = 2.0
 AEB_BRAKE_DECELERATION = 8.0
@@ -38,15 +43,11 @@ AEB_LANE_HALF_WIDTH = 4.0
 
 
 # VISUALIZATION PARAMS
-REALTIME_FACTOR = 1.0 # 1.0 = real time, 2.0 = double speed, 0 = as fast as possible.
+REALTIME_FACTOR = 2.5 # Higher -> faster
 USE_VIEWER = True
-VIEW_SENSOR_FRUSTUMS = True # NOTE: Frustum = geometric representation of the sensor's (FOV) in 3D space
-VIEWER_THREADS = 1 
+VIEW_SENSOR_FRUSTUMS = True 
+VIEWER_THREADS = 2 
 KEEP_VIEWER_OPEN = True
-
-
-# START
-
 
 class ScenarioObjectState(ct.Structure):
     
@@ -81,6 +82,7 @@ class ScenarioObjectState(ct.Structure):
         ("wheel_rot", ct.c_double),
         ("visibility_mask", ct.c_int),
     ]
+
 
 # Mapping object for readability
 OBJECT_TYPES = {
@@ -231,7 +233,7 @@ def calculate_ttc(ego, target, distance):
     return distance / closing_speed
 
 
-def choose_aeb_target(ego, states, detected_ids, sensor_values):
+def choose_aeb_target(ego, states, detected_ids, sensor_values, perception_values):
     """
     Choose the target for AEB (Automatic Emergency Braking) based on the detected objects.
     The function iterates through the detected objects, calculates their relative positions and distances,
@@ -247,7 +249,7 @@ def choose_aeb_target(ego, states, detected_ids, sensor_values):
         relative_x, relative_y, relative_z = sensor_values[object_id]
         if relative_x <= 0.0 or abs(relative_y) > AEB_LANE_HALF_WIDTH:
             continue
-        distance = math.hypot(relative_x, relative_y)
+        distance = perception_values[object_id]["perceived_distance"]
         ttc = calculate_ttc(ego, target, distance)
         candidates.append((ttc, distance, object_id))
     return min(candidates, default=(math.inf, math.inf, None))
@@ -301,6 +303,7 @@ def main():
         "object_heading_deg", "lane_id", "sensor_near_range",
         "sensor_far_range", "sensor_fov_deg", "controller_state",
         "aeb_target_id", "ttc", "ego_speed", "commanded_speed",
+        "true_distance", "perceived_distance", "distance_error"
     ]
     
 
@@ -338,26 +341,66 @@ def main():
                 detection_count = library.SE_FetchSensorObjectList(sensor_id, detection_buffer) 
                 detected_ids = set(detection_buffer[:max(0, detection_count)])
                 current_time = library.SE_GetSimulationTime()
+                
+                # ADD PERCEPTION NOISE
                 sensor_values = {}
-                for object_id, target in states.items():
-                    if object_id != args.ego_id:
-                        sensor_values[object_id] = sensor_relative_position(
-                            ego, target, args.sensor_x, args.sensor_y, args.sensor_z, args.sensor_heading
-                        )
+                perception_values = {} # to store perceived distances and errors
+                
+                for object_id, target in states.items(): 
+                    if object_id == args.ego_id: # skip ego
+                        continue
+
+                    # Target object position w.r.t to sensor (reference frame of the sensor)
+                    relative_x, relative_y, relative_z = sensor_relative_position(
+                        ego,
+                        target,
+                        args.sensor_x,
+                        args.sensor_y,
+                        args.sensor_z,
+                        args.sensor_heading)
+                    
+                    # Noise implementation
+                    true_distance = math.sqrt(relative_x ** 2 + relative_y ** 2) # euclidena distance to compute perceived distance
+                    
+                    perceived_distance = true_distance 
+                    distance_error = 0.0
+                    
+                    if ENABLE_PERCEPTION_NOISE and object_id in detected_ids:
+                        # Apply perception model to add noise to the perceived distance 
+                        measurement = perception_model.measure_distance(true_distance) 
+                        perceived_distance = measurement["perceived_distance"]
+                        distance_error = measurement["distance_error"]
+                        
+                    sensor_values[object_id] = (relative_x, relative_y, relative_z)
+                    
+                    # Store perception values for logging
+                    perception_values[object_id] = {
+                        "true_distance": true_distance,
+                        "perceived_distance": perceived_distance,
+                        "distance_error": distance_error,
+                    }
 
                 
                 # CONTROLLER LOGIC: AEB
+                
                 # Choose AEB target based on detected objects and their time to collide
                 ttc, target_distance, aeb_target_id = choose_aeb_target(
-                    ego, states, detected_ids, sensor_values
+                    ego, states, 
+                    detected_ids, 
+                    sensor_values,
+                    perception_values # update to use perceived distances and errors
                 )
+                
+                
                 controller_state = "MONITORING"
                 commanded_speed = ego.speed
+                
                 if ENABLE_AEB and ttc <= AEB_TTC_THRESHOLD:
                     controller_state = "BRAKING"
                     commanded_speed = max(0.0, ego.speed - AEB_BRAKE_DECELERATION * args.dt)
                     if library.SE_ReportObjectSpeed(args.ego_id, commanded_speed) != 0:
                         raise RuntimeError("Could not apply AEB speed command")
+                
                 if ENABLE_AEB:
                     print(
                         f"AEB: {controller_state:10s} target={aeb_target_id} "
@@ -374,7 +417,7 @@ def main():
                     relative_x, relative_y, relative_z = sensor_values[object_id]
                     distance = math.sqrt(relative_x ** 2 + relative_y ** 2)
                     bearing = math.degrees(math.atan2(relative_y, relative_x))
-
+                    
                     print_table_row(
                         step,
                         current_time,
@@ -389,6 +432,7 @@ def main():
                     
                     # Save as CSV
                     writer.writerow({
+                        
                         "time": f"{current_time:.6f}",
                         "controller": args.controller,
                         "ego_id": args.ego_id,
@@ -396,6 +440,7 @@ def main():
                         "object_type": OBJECT_TYPES.get(target.object_type, "unknown"),
                         "object_category": target.object_category,
                         "detected": int(object_id in detected_ids),
+                        
                         "distance": f"{distance:.6f}",
                         "bearing_deg": f"{bearing:.6f}",
                         "relative_x": f"{relative_x:.6f}",
@@ -404,14 +449,23 @@ def main():
                         "object_speed": f"{target.speed:.6f}",
                         "object_heading_deg": f"{math.degrees(normalize_angle(target.h - ego.h)):.6f}",
                         "lane_id": target.lane_id,
+                        
+                        # Sensors
                         "sensor_near_range": args.near_range,
                         "sensor_far_range": args.far_range,
                         "sensor_fov_deg": args.fov_deg,
+                        
+                        # Controller
                         "controller_state": controller_state,
                         "aeb_target_id": "" if aeb_target_id is None else aeb_target_id,
                         "ttc": "" if math.isinf(ttc) else f"{ttc:.6f}",
                         "ego_speed": f"{ego.speed:.6f}",
                         "commanded_speed": f"{commanded_speed:.6f}",
+                        
+                        # Perception values  
+                        "true_distance": f"{perception_values[object_id]['true_distance']:.6f}",
+                        "perceived_distance": f"{perception_values[object_id]['perceived_distance']:.6f}",
+                        "distance_error": f"{perception_values[object_id]['distance_error']:.6f}",
                     })
 
                 if library.SE_StepDT(args.dt) != 0:
@@ -427,8 +481,6 @@ def main():
 
     print(f"Wrote evaluation results to {args.output.resolve()}")
 
-
-# END
 
 if __name__ == "__main__":
     main()
