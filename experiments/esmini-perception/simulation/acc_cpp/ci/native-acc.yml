@@ -1,0 +1,32 @@
+# Author: Zhuo Ma
+# Copy to repository-root .github/workflows/native-acc.yml to enable.
+name: Native esmini ACC
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  simulate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: experiments/esmini-perception/simulation/acc_cpp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install cmake==3.31.6
+      - run: python tools/build_native.py --jobs 2
+      - if: runner.os != 'Windows'
+        run: python tools/run_comparison.py --binary build/runner/acc_sim --seeds 42 --validate
+      - if: runner.os == 'Windows'
+        run: python tools/run_comparison.py --binary build/runner/Release/acc_sim.exe --seeds 42 --validate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acc-results-${{ matrix.os }}
+          path: |
+            experiments/esmini-perception/simulation/acc_cpp/results/
+            experiments/esmini-perception/simulation/acc_cpp/build/*-build.log

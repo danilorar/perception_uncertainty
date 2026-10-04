@@ -1,0 +1,33 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {"major": 3, "minor": 21, "patch": 0},
+  "configurePresets": [
+    {
+      "name": "native",
+      "displayName": "Native C++17 + esmini v3.8.1",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON",
+        "ACCSIM_BUILD_RUNNER": "ON",
+        "ESMINI_HOME": "$env{ESMINI_HOME}"
+      }
+    },
+    {
+      "name": "core",
+      "displayName": "Portable core tests (no esmini dependency)",
+      "inherits": "native",
+      "binaryDir": "${sourceDir}/build/core",
+      "cacheVariables": {"ACCSIM_BUILD_RUNNER": "OFF"}
+    }
+  ],
+  "buildPresets": [
+    {"name": "native", "configurePreset": "native"},
+    {"name": "core", "configurePreset": "core"}
+  ],
+  "testPresets": [
+    {"name": "native", "configurePreset": "native", "output": {"outputOnFailure": true}},
+    {"name": "core", "configurePreset": "core", "output": {"outputOnFailure": true}}
+  ]
+}
