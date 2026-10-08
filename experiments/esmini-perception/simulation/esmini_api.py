@@ -4,6 +4,7 @@ Author: Zhuo Ma
 The ABI uses double-precision coordinates. Changing State field order or types
 without checking the matching esminiLib.hpp can corrupt the returned data.
 """
+from pathlib import Path
 import ctypes as C
 import math
 import xml.etree.ElementTree as ET
@@ -61,6 +62,8 @@ def load_library():
         "SE_SetCameraMode": (C.c_int, [C.c_int]),
         "SE_Close": (None, []),
         "SE_CloseLogFile": (None, []),
+        "SE_AddCustomCamera": (C.c_int, [C.c_double] * 5),
+        "SE_SetCameraObjectFocus": (C.c_int, [C.c_int]),
     }
     for name, (return_type, argument_types) in signatures.items():
         function = getattr(se, name)
@@ -83,7 +86,7 @@ def add_sensor(se, host_id, max_objects=10):
         host_id,
         2.5, 0.0, 0.5,          # sensor position relative to ego: x/y/z [m]
         0.0,                     # yaw relative to ego [rad]
-        0.1, 100.0,             # near/far range [m]
+        0.1, 60.0,             # near/far range [m]
         math.radians(60.0),      # horizontal field of view [rad]
         max_objects,            # maximum number of returned object IDs
     )
@@ -117,9 +120,11 @@ def scenario_arguments(scenario, output_dir, dt, headless=False, replay=False):
         arguments += ["--headless"]
     else:
         # Keep the established macOS viewer settings and fixed overhead camera.
-        arguments += ["--window", "80", "80", "1100", "650", "--SingleThreaded",
-                      "--generate_without_textures", "--ground_plane", "off",
-                      "--disable_shadows", "--hide_trajectories"]
+        arguments += ["--window", "80", "80", "960", "540",
+                      "--SingleThreaded",
+                      "--ground_plane", "on",
+                      "--disable_shadows",
+                      "--hide_trajectories",]
     return arguments
 
 
@@ -156,3 +161,92 @@ def set_overview_camera(se, source_scenario):
     )
     if camera_id < 0 or se.SE_SetCameraMode(camera_id) != 0:
         raise RuntimeError("Failed to select the fixed overview camera")
+
+
+def make_visual_scenario(source, output_dir):
+    """
+    Creat customized visualization:
+    Object_1 (ego): white; Object_2: red
+    """
+    source = Path(source)
+    root = ET.parse(source).getroot()
+
+    models = (
+        ("object_1", "0", "car_white.osgb"),
+        ("object_2", "2", "car_red.osgb"),
+    )
+
+    for object_name, model_id, filename in models:
+        vehicle = root.find(
+            f'./Entities/ScenarioObject[@name="{object_name}"]/Vehicle'
+        )
+        if vehicle is None:
+            raise ValueError(f"Cannot find vehicle: {object_name}")
+
+        model_path = ESMINI / "resources" / "models" / filename
+        if not model_path.is_file():
+            raise FileNotFoundError(model_path)
+
+        properties = vehicle.find("Properties")
+        if properties is None:
+            properties = ET.SubElement(vehicle, "Properties")
+
+        model_property = properties.find('./Property[@name="model_id"]')
+        if model_property is None:
+            model_property = ET.SubElement(
+                properties, "Property", name="model_id"
+            )
+
+        model_property.set("value", model_id)
+
+        # Replace vehicle model
+        for element in list(properties.findall("File")):
+            properties.remove(element)
+
+        ET.SubElement(
+            properties, "File", filepath=str(model_path)
+        )
+
+    # re-resolve road file
+    for element in root.findall("./RoadNetwork/LogicFile"):
+        reference = Path(element.get("filepath"))
+        road_path = (source.parent / reference).resolve()
+
+        if not road_path.is_file():
+            road_path = DATA / reference.name
+
+        if not road_path.is_file():
+            raise FileNotFoundError(road_path)
+
+        element.set("filepath", str(road_path))
+
+    destination = Path(output_dir) / "visual_scenario.xosc"
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(
+        destination,
+        encoding="utf-8",
+        xml_declaration=True,
+    )
+    return destination
+
+
+def set_3d_camera(se, host_id):
+    """
+    Relocate camera
+    """
+    if se.SE_SetCameraObjectFocus(host_id) != 0:
+        raise RuntimeError("Cannot focus camera on ego")
+
+    camera_id = se.SE_AddCustomCamera(
+        -25.0,                              # back of ego 25 m
+        -45.0,                              # right of ego 45 m
+        40.0,                               # above ego 40 m
+        math.atan2(45.0, 40.0),             # horizontal angle
+        math.atan2(40.0, math.hypot(40.0, 45.0)),
+    )
+
+    if camera_id < 0:
+        raise RuntimeError("Cannot create 3D camera")
+
+    if se.SE_SetCameraMode(camera_id) != 0:
+        raise RuntimeError("Cannot select 3D camera")

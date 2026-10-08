@@ -1,0 +1,6 @@
+# 本机文件 / Local machine files
+.DS_Store
+__pycache__/
+*.py[cod]
+imgui.ini
+replayer_log.txt

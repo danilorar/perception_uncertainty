@@ -16,12 +16,17 @@ __pycache__/
 /simulation/Run Vector CCRs 50kmh.command
 /simulation/Run cut-in demo.command
 
-# Run products and pre-refactor snapshots. Generated XOSC inputs ARE tracked.
+# 生成场景、结果与历史快照 / Generated scenarios, results and old snapshots
+/simulation/generated/
 /simulation/results/
 /simulation/archive/
 /results/
 *.log
 *.dat
+imgui.ini
+replayer_log.txt
+*.mp4
+*.gif
 
 # Course documents are not part of the simulation code/data repository.
 /Files/

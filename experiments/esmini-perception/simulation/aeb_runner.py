@@ -16,7 +16,7 @@ import time
 
 from aeb_controller import HostReference, aeb_command, integrate, risk_metrics
 from esmini_api import (add_sensor, fetch_ids, get_state, initialize, load_library,
-                        scenario_arguments, set_overview_camera)
+                        scenario_arguments, make_visual_scenario, set_3d_camera,)
 from generate_scenarios import sha256
 from paths import DATA, GENERATED, RESULTS, SCENARIO_IDS
 from sensor_model import DetectionDropout
@@ -35,6 +35,7 @@ def build_parser(ideal=False):
     parser.add_argument("--headless", action="store_true", help="No viewer or real-time pacing")
     parser.add_argument("--results-dir", type=Path, default=RESULTS)
     parser.add_argument("--perception-seed", type=int, default=42)
+
     if ideal:
         # The ideal entry cannot accidentally turn on missing detections.
         parser.set_defaults(drop_prob=0.0)
@@ -48,9 +49,11 @@ def run(args):
     """Run one case and return its unique output folder. Original data is read-only."""
     source_scenario = DATA / f"C_original_{args.scenario}.xosc"
     scenario = GENERATED / f"C_aeb_{args.scenario}.xosc"
+
     for path in (source_scenario, scenario):
         if not path.is_file():
             raise FileNotFoundError(f"Missing {path}; run generate_scenarios.py first")
+
     # Validate inputs/load dependencies before creating an apparently valid run.
     reference = HostReference(source_scenario)
     se = load_library()
@@ -64,6 +67,7 @@ def run(args):
     )
     output_dir.mkdir(parents=True)
     print(f"Output directory: {output_dir}", flush=True)
+
     config = dict(
         scenario=args.scenario, aeb=args.aeb, drop_probability=args.drop_prob,
         perception_seed=args.perception_seed, dt_s=dt, ttc_threshold_s=args.ttc,
@@ -74,7 +78,13 @@ def run(args):
     (output_dir / "run_config.json").write_text(
         json.dumps(config, indent=2) + "\n", encoding="utf-8"
     )
-    arguments = scenario_arguments(scenario, output_dir, dt, args.headless)
+
+    display_scenario = (
+        make_visual_scenario(scenario, output_dir)
+        if not args.headless
+        else scenario
+    )
+    arguments = scenario_arguments(display_scenario, output_dir, dt, args.headless)
 
     def report_host(pose, speed, pitch=0.0, roll=0.0):
         """Write ego pose and speed for the next step; units are m, rad and m/s."""
@@ -90,8 +100,8 @@ def run(args):
 
         # Select the camera explicitly after the viewer has been initialized.
         # Its position and zoom stay fixed while the vehicles move and overlap.
-        if not args.headless:
-            set_overview_camera(se, source_scenario)
+        # if not args.headless:
+        #     set_overview_camera(se, source_scenario)
 
         host_id = se.SE_GetIdByName(b"object_1")
         target_id = se.SE_GetIdByName(b"object_2")
@@ -99,19 +109,41 @@ def run(args):
         if host_id < 0 or target_id < 0:
             raise RuntimeError("Failed to get object IDs.")
 
+        if not args.headless:
+            set_3d_camera(se, host_id)
+
         print("object_1 ID:", host_id)
         print("object_2 ID:", target_id)
 
         # --------------- add sensor to host vehicle ---------------
         sensor_id, detected_ids = add_sensor(se, host_id, max_objects)
-        if not args.headless:
-            se.SE_ViewerShowFeature(1, True)
+        # if not args.headless:
+        #     se.SE_ViewerShowFeature(1, True)
+
+        def update_sensor_display(frame_time):
+            """Set dropout display based on the following frame time."""
+
+            kept_ids, _ = perception.apply(
+                [target_id],
+                frame_time,
+                sensor_id
+            )
+
+            visible = target_id in kept_ids
+
+            if not args.headless:
+                se.SE_ViewerShowFeature(1, visible)
+
+            return visible
 
         # --------------- run simulation loop ---------------
         # One nominal step populates the sensor before the first control decision.
         initial_time = se.SE_GetSimulationTime()
         pose, host_distance, speed = reference.at_time(initial_time + dt)
         report_host(pose, speed)
+
+        # Calculate if the cone should be visible
+        cone_visible = update_sensor_display(initial_time+dt)
 
         if se.SE_StepDT(dt) != 0:
             raise RuntimeError("Initial simulation step failed")
@@ -135,7 +167,7 @@ def run(args):
 
         fields += [
             "raw_detected_ids", "observed_ids", "dropped_ids",
-            "raw_target_detected", "target_dropped",
+            "raw_target_detected", "target_dropped", "cone_visible",
             "observed_gap_m", "observed_ttc_s",
             "observed_target_object_type", "observed_target_object_category",
         ]
@@ -218,6 +250,7 @@ def run(args):
                     dropped_ids=";".join(map(str, dropped_ids)),
                     raw_target_detected=int(raw_detected),
                     target_dropped=int(target_dropped),
+                    cone_visible=int(cone_visible),
                     observed_gap_m=observed_gap if detected else "",
                     observed_ttc_s=(
                         observed_ttc
@@ -226,7 +259,7 @@ def run(args):
                     ),
                 ))
 
-                if step % 10 == 0:
+                if step % 100 == 0:
                     print(
                         f"t={t:.2f}s, detected={detected}, "
                         f"target_type={target.objectType}, "
@@ -252,8 +285,12 @@ def run(args):
                     next_pose, next_distance, next_speed = reference.at_time(t + dt)
 
                 report_host(next_pose, next_speed, ego.p, ego.r)
+
+                cone_visible = update_sensor_display(t+dt)
+
                 if se.SE_StepDT(dt) != 0:
                     raise RuntimeError("Simulation step failed")
+
                 if se.SE_GetSimulationTime() <= t:
                     if se.SE_GetQuitFlag():
                         # A stop trigger can end the scenario without advancing time.

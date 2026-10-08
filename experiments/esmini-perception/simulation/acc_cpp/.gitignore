@@ -6,3 +6,5 @@ __pycache__/
 *.pyc
 *.dSYM/
 .DS_Store
+imgui.ini
+replayer_log.txt

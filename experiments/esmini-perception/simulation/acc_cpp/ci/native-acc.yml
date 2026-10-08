@@ -1,6 +1,7 @@
 # Author: Zhuo Ma
-# Copy to repository-root .github/workflows/native-acc.yml to enable.
-name: Native esmini ACC
+# 启用时复制到仓库根目录 / Copy to repository root to enable:
+# .github/workflows/native-acc.yml
+name: Native esmini AEB / ACC
 on: [push, pull_request, workflow_dispatch]
 jobs:
   simulate:
@@ -26,7 +27,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: acc-results-${{ matrix.os }}
+          name: simulation-results-${{ matrix.os }}
           path: |
             experiments/esmini-perception/simulation/acc_cpp/results/
             experiments/esmini-perception/simulation/acc_cpp/build/*-build.log

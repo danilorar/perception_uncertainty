@@ -3,7 +3,7 @@
 Author: Zhuo Ma
 Run: python3 -m unittest discover -s tests -v
 These tests use no esmini library or viewer. Native regression results are
-documented separately in docs/验证记录.md.
+documented separately in docs/validation.md.
 """
 import math
 from pathlib import Path

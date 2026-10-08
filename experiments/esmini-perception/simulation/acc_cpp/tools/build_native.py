@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build pinned esmini + the original C++ ACC + the experiment runner.
+"""Build pinned esmini + the original C++ ACC/AEB + the experiment runner.
 
 Author: Zhuo Ma
 Python orchestrates compilation only. The complete simulation loop is C++.
-The upstream ACC files are verified byte-for-byte against the pinned commit.
+The upstream ACC and R157 AEB files are verified byte-for-byte against the pinned commit.
 """
 import argparse
 import hashlib
@@ -51,14 +51,14 @@ def cmake_path(explicit):
         raise RuntimeError("Install CMake >=3.21 (or python -m pip install cmake), then rerun.")
 
 
-def verify_acc(source):
+def verify_controllers(source):
     """Only the CMake download guard is patched; ACC implementation is intact."""
     hashes = {}
-    for name in ("ControllerACC.cpp", "ControllerACC.hpp"):
+    for name in ("ControllerACC.cpp", "ControllerACC.hpp", "ControllerALKS_R157SM.cpp", "ControllerALKS_R157SM.hpp"):
         relative = "EnvironmentSimulator/Modules/Controllers/" + name
         original = output(["git", "show", COMMIT + ":" + relative], source)
         if (source / relative).read_bytes() != original:
-            raise RuntimeError("Upstream ACC was modified: " + relative)
+            raise RuntimeError("Upstream controller was modified: " + relative)
         hashes[name] = hashlib.sha256(original).hexdigest()
     return hashes
 
@@ -100,7 +100,7 @@ def main():
         command(["git", "sparse-checkout", "set", "EnvironmentSimulator", "support", "externals"], source)
     if not (source / "externals/fmt/.git").exists():
         command(["git", "submodule", "update", "--init", "--depth", "1", "externals/fmt"], source)
-    acc_hashes = verify_acc(source)
+    controller_hashes = verify_controllers(source)
     patch_build_guard(source)
     engine_build = build / "engine"
     flags = ["-DUSE_" + name + "=OFF" for name in ("OSG", "OSI", "SUMO", "GTEST", "IMPLOT", "PROJ")]
@@ -125,8 +125,10 @@ def main():
     header.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source / "EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp", header / "esminiLib.hpp")
     (home / "version.txt").write_text('ESMINI_GIT_TAG="v3.8.1"\nESMINI_GIT_REV="' + COMMIT + '"\n', encoding="utf-8")
-    manifest = {"commit": COMMIT, "controller_source_unchanged": True, "controller_sha256": acc_hashes,
-                "bridge_sha256": hashlib.sha256((ROOT / "src/native_acc_bridge.cpp").read_bytes()).hexdigest()}
+    manifest = {"commit": COMMIT, "controller_source_unchanged": True, "controller_sha256": controller_hashes,
+                "abi_version": 2, "controllers": ["acc", "aeb"],
+                "bridge_sha256": {name: hashlib.sha256((ROOT / "src" / name).read_bytes()).hexdigest()
+                                  for name in ("native_acc_bridge.cpp", "native_aeb_bridge.cpp")}}
     (home / "accsim_bridge.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     runner = build / "runner"
     configure = [cmake, "-S", ROOT, "-B", runner, "-DCMAKE_BUILD_TYPE=Release", "-DESMINI_HOME=" + str(home)]

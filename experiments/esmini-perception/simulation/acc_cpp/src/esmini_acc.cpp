@@ -9,11 +9,13 @@ namespace accsim {
 namespace {
 ACCSIM_Object packet(const ObjectState& x) {
     return {x.id,x.object_category,x.pose.x,x.pose.y,x.pose.z,x.pose.h,x.pose.p,x.pose.r,x.speed,
-            x.box.length,x.box.width,x.box.height,x.box.cx,x.box.cy,x.box.cz};
+            x.box.length,x.box.width,x.box.height,x.box.cx,x.box.cy,x.box.cz,
+            x.velocity.x,x.velocity.y,x.velocity.z,x.acceleration.x,x.acceleration.y,x.acceleration.z};
 }
 ACCSIM_Object packet(const Observation& x) {
     return {x.track_id,x.object_category,x.pose.x,x.pose.y,x.pose.z,x.pose.h,x.pose.p,x.pose.r,x.speed,
-            x.box.length,x.box.width,x.box.height,x.box.cx,x.box.cy,x.box.cz};
+            x.box.length,x.box.width,x.box.height,x.box.cx,x.box.cy,x.box.cz,
+            x.velocity.x,x.velocity.y,x.velocity.z,x.acceleration.x,x.acceleration.y,x.acceleration.z};
 }
 }
 ControlRequest EsminiAcc::update(const ControllerInput& input) const {

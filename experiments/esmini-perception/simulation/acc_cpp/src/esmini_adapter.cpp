@@ -11,8 +11,11 @@ void checked(int status,const char* operation) { if(status!=0) throw std::runtim
 ObjectState state(int id) {
     SE_ScenarioObjectState s{};
     checked(SE_GetObjectState(id,&s),"SE_GetObjectState failed");
-    return {s.id,s.objectType,s.objectCategory,{s.x,s.y,s.z,s.h,s.p,s.r},
+    ObjectState result{s.id,s.objectType,s.objectCategory,{s.x,s.y,s.z,s.h,s.p,s.r},
             {s.length,s.width,s.height,s.centerOffsetX,s.centerOffsetY,s.centerOffsetZ},s.speed};
+    checked(SE_GetObjectVelocityGlobalXYZ(id,&result.velocity.x,&result.velocity.y,&result.velocity.z),"Get object velocity failed");
+    checked(SE_GetObjectAccelerationGlobalXYZ(id,&result.acceleration.x,&result.acceleration.y,&result.acceleration.z),"Get object acceleration failed");
+    return result;
 }
 }
 EsminiAdapter::EsminiAdapter(const PreparedScenario& scenario,const std::filesystem::path& output,
@@ -38,6 +41,14 @@ EsminiAdapter::EsminiAdapter(const PreparedScenario& scenario,const std::filesys
                                      sensor.near_m,sensor.far_m,sensor.fov_rad,sensor.capacity);
         if(sensor_id_<0) throw std::runtime_error("Cannot add ideal sensor");
         checked(SE_StepDT(0.0),"Cannot refresh initial ideal sensor");
+        // At time zero esmini has no displacement history for velocity. The
+        // adapter already derives initial speeds from the original first segment;
+        // seed velocity consistently for all vehicles, without advancing time.
+        for(int i=0;i<count;++i) {
+            const auto initial=state(SE_GetId(i));
+            checked(SE_ReportObjectVel(initial.id,initial.speed*std::cos(initial.pose.h),
+                       initial.speed*std::sin(initial.pose.h),0),"Initialize velocity failed");
+        }
         if(std::abs(SE_GetSimulationTime())>1e-9) throw std::runtime_error("Initialization advanced physical time");
         SE_ScenarioObjectState ego{};
         checked(SE_GetObjectState(ego_id_,&ego),"Cannot verify external ego bridge");
@@ -59,7 +70,7 @@ PerceptionFrame EsminiAdapter::sense(std::uint64_t sequence) const {
     for(int i=0;i<count;++i) {
         const auto s=state(buffer[static_cast<std::size_t>(i)]);
         if(s.id==ego_id_) continue;
-        frame.objects.push_back({s.id,s.object_type,s.object_category,s.pose,s.box,s.speed});
+        frame.objects.push_back({s.id,s.object_type,s.object_category,s.pose,s.box,s.speed,s.velocity,s.acceleration});
     }
     return frame;
 }

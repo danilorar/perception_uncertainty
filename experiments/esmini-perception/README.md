@@ -1,104 +1,131 @@
-# TME180 — ideal perception, detection dropout and AEB
+# esmini 感知误差与原生 AEB/ACC / Perception errors with native AEB/ACC
 
-Author: **Zhuo Ma**
+作者 / Author: **Zhuo Ma**
 
-This project replays three supplied rear-end scenarios in esmini and studies how
-missing detections affect a simple external AEB controller. The original dataset
-credits CAP unit, Vehicle Safety Division, Chalmers University of Technology;
-its original file headers and contents are preserved.
+使用老师提供的三个追尾场景，对比理想感知、IID 随机漏检及两状态 Markov 连续漏检对闭环控制的影响。当前主流程是 C++ 原生 AEB；ACC 可切换，Python 负责构建、批运行和回放。`HiDriveController` 尚未收到、尚未实现。
 
-中文逐步说明：[运行、代码结构与 GitHub 上传](docs/运行与GitHub指南.md)。
+This experiment uses three supplied rear-end scenarios to compare ideal perception, IID detection loss and two-state Markov bursts in a closed loop. The main workflow uses native C++ AEB, with an ACC option. Python handles builds, batches and replay. The teacher's `HiDriveController` source has not been received or implemented.
 
-## Files
+固定 esmini **v3.8.1**，commit `19d26b68f7f473de4e55046a794b5fd2f91c58c8`。AEB 调用 `ALKS_R157SM::ReferenceDriver` 的 AEB 组件；不执行完整驾驶员模型。目录名 `acc_cpp` 和可执行程序名 `acc_sim` 保留原命名。
+
+esmini is pinned to **v3.8.1**, commit `19d26b68f7f473de4e55046a794b5fd2f91c58c8`. AEB calls the AEB component of `ALKS_R157SM::ReferenceDriver`, excluding the full driver model. The historical names `acc_cpp` and `acc_sim` are retained.
+
+## 目录 / Layout
 
 ```text
-Data/                              Original .xosc/.xodr pairs; read only
-simulation/
-  my_sensor_demo.py                Ideal sensor on original trajectory replay
-  my_aeb_demo.py                   Ideal perception + AEB off/on
-  my_aeb_dropout_demo.py           Detection dropout + AEB off/on
-  esmini_api.py                    Native API, State, object sensor and camera
-  sensor_model.py                  Reproducible per-object/per-tick dropout
-  aeb_controller.py                TTC logic and ego path integration
-  aeb_runner.py                    Shared ideal/dropout experiment loop
-  generate_scenarios.py            Original data -> external-AEB scenario copies
-  generated/                      Generated XOSC files and provenance manifest
-  run_comparison.py               Four matched conditions, one or more seeds
-  compare_aeb_dropout.py           Summarize existing run directories
-  paths.py                        Portable paths and environment overrides
-  my_run_one.py / run_scenarios.py Original replay and data validation
-  render_replays.py                Optional native replay rendering (Pillow)
-tests/                            Tests without native simulator dependencies
-docs/                             Usage, output fields and validation record
+esmini-perception/
+  Data/                       # 老师的原始 XOSC/XODR，只读 / Supplied originals, read only
+  docs/                       # 架构、字段、验证与 Git 指南 / Architecture, schema, checks, Git
+  simulation/
+    acc_cpp/                  # 当前原生 AEB/ACC / Current native AEB/ACC
+      src/ include/           # C++ 闭环及桥接 / C++ loop and bridges
+      configs/ tests/ tools/  # 配置、测试、Python 工具 / Configs, tests, Python tools
+      reports/                # 可提交的精选结果 / Selected results for Git
+      third_party/            # 所需 XML 源码与上游许可 / Required XML code and licenses
+      build/ results/         # 本机生成，不提交 / Local generated files, ignored
+    *.py                      # Python 教学流程及共享 API / Python examples and shared API
+    generated/                # 按需生成的 Python 场景副本 / Generated Python scenario copies
+  tests/                      # Python 教学模型测试 / Python model tests
 ```
 
-## Setup
+## 从零运行 / Start from a clean checkout
 
-- Python **3.9 or later**; the core workflow uses the Python standard library.
-- esmini **3.8.1**, using its double-precision C ABI. Install the full official
-  [demo package](https://github.com/esmini/esmini/releases/tag/v3.8.1), including
-  `bin/` and `resources/`, under `simulation/esmini-demo/`.
-- Alternatively, set `ESMINI_HOME` to your esmini installation directory.
-- The validated platform is macOS. Other platforms require matching esmini and
-  Python architectures; this project does not claim they have been tested.
-- Only `render_replays.py` needs the optional Pillow package.
+需要 Git、Python ≥3.9、CMake ≥3.21 和 C++17 编译器。macOS 使用 Xcode Command Line Tools，Linux 使用 GCC/Clang，Windows 使用 Visual Studio C++ Build Tools。核心 Python 工具仅依赖标准库。当前实际验证平台为 macOS；Windows/Linux 提供构建适配和 CI 模板，尚未在本机验证。
 
-Run commands from the repository root:
+Install Git, Python ≥3.9, CMake ≥3.21 and a C++17 compiler. Use Xcode Command Line Tools on macOS, GCC/Clang on Linux, or Visual Studio C++ Build Tools on Windows. Core Python tools use only the standard library. macOS has been tested locally; Windows/Linux have build support and a CI template, without local validation.
+
+以下命令从 Git 仓库根目录开始；进入 `acc_cpp` 后执行其余命令。
+
+Start at the Git repository root, then run the remaining commands inside `acc_cpp`.
 
 ```bash
-# Rebuild the three generated scenario copies; original data is never rewritten.
-python3 simulation/generate_scenarios.py --scenario all --overwrite
+cd experiments/esmini-perception/simulation/acc_cpp
+# 若已安装 CMake，可跳过 / Skip if CMake is installed
+python3 -m pip install cmake==3.31.6
+# 下载固定源码、构建带桥接的无窗口库与 runner、运行 CTest
+# Fetch pinned source, build the headless library/runner, and run CTest
+python3 tools/build_native.py
 
-# View the ideal sensor while replaying the original scenario.
-python3 simulation/my_sensor_demo.py --scenario 1549178
-
-# Ideal perception, AEB enabled. Add --headless to skip the viewer.
-python3 simulation/my_aeb_demo.py --scenario 1549178 --aeb on
-
-# 10% dropout, AEB enabled, reproducible seed.
-python3 simulation/my_aeb_dropout_demo.py --scenario 1549178 --aeb on --drop-prob 0.1 --perception-seed 42
-
-# AEB off/on x dropout 0/0.1; writes one comparison.csv.
-python3 simulation/run_comparison.py --scenario 1549178 --seeds 42
-
-# Test the models and scenario transformation without starting esmini.
-python3 -m unittest discover -s tests -v
+# 理想感知与连续漏检比较，加边界/复现检查
+# Ideal versus burst loss, with boundary/reproducibility checks
+python3 tools/run_comparison.py --binary build/runner/acc_sim \
+  --scenario ../../Data/C_original_1549178.xosc --controller aeb \
+  --dropout-model markov --dropout-p 0.1 --mean-missing 0.5 \
+  --seeds 10 --validate
 ```
 
-Replace `1549178` with `1554254` or `1554431` to select another supplied case.
-Run any entry with `--help` for its parameters. Single-run AEB entries default to
-**AEB off**. The ideal entry fixes dropout at zero; the dropout entry defaults to
-**0.1**, which can be explicitly changed with `--drop-prob`.
+Windows 将 `python3` 改为 `python`，程序路径改为 `build/runner/Release/acc_sim.exe`。Bash 的续行符 `\` 在 PowerShell 中需改为反引号，或将命令写为一行。
 
-## Inputs, observations and limitations
+On Windows, use `python` and `build/runner/Release/acc_sim.exe`. Replace Bash's `\` continuation with PowerShell backticks, or enter the command on one line.
 
-`SE_FetchSensorObjectList` returns a count and object IDs. Position, size, speed,
-type and category are read separately through `SE_GetObjectState` as ground
-truth. The controller receives target properties only while that target remains
-detected after dropout. Truth is retained separately for evaluation.
+输出为 `results/comparison_<scenario>_<UTC>/`，`results/latest.txt` 指向该批次。场景 ID 可替换为 `1554254` 或 `1554431`。单次原生运行必须使用新的空输出目录。
 
-The ideal sensor is an object-level geometric visibility model. This experiment
-does not implement camera/radar/lidar physics, sensor fusion, classification
-uncertainty, false positives or tracking. The dropout probability is per object
-per simulation update, not a guaranteed fraction of samples in a finite run.
+Output goes to `results/comparison_<scenario>_<UTC>/`; `results/latest.txt` points to the batch. Replace the scenario ID with `1554254` or `1554431`. Single native runs require a new, empty output directory.
 
-The AEB controller uses an approximate longitudinal TTC for near-parallel
-rear-end motion. It follows the ego's original spatial path under braking; the
-target continues its prescribed trajectory. Braking remains latched after the
-first trigger, including during later dropouts. It is a simulation teaching
-model, not a production AEB or a real-road safety validation.
+## 仿真流程 / Simulation flow
 
-## Results and sharing
+```text
+Data XOSC/XODR -> generated working copy -> esmini world truth
+                                             |
+                         ideal object sensor, every 0.05 s
+                                             |
+                          IID / Markov loss -> cached observations
+                                             |
+                    exact ego + observations -> native AEB / ACC
+                                             |
+                acceleration limit + integration, every 0.01 s
+                                             |
+                          report next ego state to esmini
 
-Results default to `~/TME180-local/results/data-scenarios/`, outside OneDrive.
-Override with `--results-dir` or `TME180_RESULTS`. Each run creates a new folder;
-it does not overwrite previous experiments. See [output definitions](docs/输出字段.md).
+world truth -> collision/gap/TTC metrics -> logs and summary CSV
+saved truth + saved observations -> replay with cone visibility
+```
 
-Track the original data, generated XOSC/manifest, scripts, tests and documentation.
-The `.gitignore` excludes local simulator downloads, environments, results and
-old experiment backups. `project-files.txt` explicitly lists the files to copy
-when importing this workflow into an existing team repository.
+误差只作用于外部目标观测。自车反馈准确，目标继续原时间轨迹；控制器无法读取活动场景中的目标真值。漏检删除整条观测，不填零、不补读真值。物理步之间共用一次感知处理的缓存，安全评价独立使用真值。
 
-Dataset availability is distinct from script authorship: the supplied data has
-no redistribution license in this checkout. Use the data provider's agreed
-sharing scope for both original and derived scenarios; no license is inferred here.
+Errors affect only external-object observations. Ego feedback is exact and the target follows its original timed trajectory. Controllers cannot read live target truth. A miss removes the entire observation, without zeros or truth fallback. Physics steps reuse one processed sensor frame; safety metrics independently use truth.
+
+## 完整实验和回放 / Full experiment and replay
+
+```bash
+# 三场景：ideal + IID + Markov 0.2/0.5/1.0 s，每随机组 100 个 seed
+# Three scenarios: ideal + IID + Markov 0.2/0.5/1.0 s, 100 seeds per random group
+python3 tools/run_markov_sensitivity.py --binary build/runner/acc_sim \
+  --controller aeb --dropout-p 0.1 --mean-missing 0.2 0.5 1.0 \
+  --seed-count 100 --seed-start 0 --dt 0.01 --sensor-period 0.05 \
+  --duration 10 --markov-init stationary --validate
+
+# 本机图形版 esmini，含 bin/ 和 resources/ / Local graphical esmini installation
+export ESMINI_VIEWER_HOME="/path/to/graphical/esmini"
+task_batch="$(cat results/latest.txt)"
+python3 tools/replay_perception.py --run-dir "$task_batch/dropout_seed10" \
+  --esmini-home "$ESMINI_VIEWER_HOME"
+
+# 导出精简结果，原始数据继续留在 results/ / Export compact results; retain raw runs locally
+python3 tools/export_report.py --batch-dir "$task_batch" --name my_aeb_comparison
+```
+
+回放需要带 viewer 的 v3.8.1 库和模型资源。默认寻找仓库根目录 `esmini/`；原生实验构建的 `build/engine-home` 没有图形功能。回放只读取已存日志：观测存在时显示 cone，单目标漏检时隐藏 cone，不重新运行控制器或抽样。
+
+Replay requires a viewer-enabled v3.8.1 library and model resources. It looks in repository-root `esmini/` by default; the experiment's `build/engine-home` has no graphics. Replay reads saved logs: the cone appears when observations exist and disappears during single-target loss, without rerunning the controller or sampling errors.
+
+## 文档和结果 / Documentation and results
+
+| 入口 / Entry | 内容 / Content |
+|---|---|
+| [原生运行指南 / Native guide](simulation/acc_cpp/README.md) | 构建、参数、批运行、回放 / Build, parameters, batches, replay |
+| [架构与接口 / Architecture](docs/architecture.md) | 文件依赖、时序、Markov 原理 / Dependencies, timing, Markov model |
+| [输出字段 / Output schema](docs/output-schema.md) | CSV/JSON 字段及单位 / CSV/JSON fields and units |
+| [HiDrive 接入 / HiDrive integration](docs/hidrive-integration.md) | 收到老师源码后的步骤 / Steps after receiving teacher source |
+| [验证记录 / Validation](docs/validation.md) | 当前检查与历史实验的区别 / Current checks and historical evidence |
+| [GitHub 指南 / GitHub guide](docs/github-workflow.md) | 提交边界、结果导出、Git 命令 / Tracking policy, exports, Git commands |
+| [精选报告 / Selected reports](simulation/acc_cpp/reports/README.md) | AEB 敏感性、ACC 历史结果、seed10 演示 / AEB sensitivity, historical ACC, seed10 demo |
+| [Python 教学示例 / Python examples](simulation/README.md) | 早期简化 AEB，与原生实验分开 / Earlier simplified AEB, separate from native runs |
+
+`1554431` 在当前参数下理想感知也碰撞，不能把所有碰撞归因于漏检。Markov 参数是设定误差的敏感性研究，尚未用真实传感器数据校准。
+
+With current parameters, `1554431` collides even under ideal perception; its collisions cannot all be attributed to misses. Markov parameters represent assumed-error sensitivity and have not been calibrated against real sensor data.
+
+项目自写文档采用中英文；第三方源码和许可原文保持完整。原始场景的 CAP unit / Vehicle Safety Division / Chalmers 署名保留，数据提供方的分享范围仍适用于原始及派生场景。
+
+Project-authored documentation is bilingual. Third-party source and license text remain intact. Original CAP unit / Vehicle Safety Division / Chalmers attribution is preserved; the data provider's sharing terms apply to both original and derived scenarios.

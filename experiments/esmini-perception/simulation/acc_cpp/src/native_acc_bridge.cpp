@@ -35,6 +35,8 @@ Vehicle* copy_vehicle(const ACCSIM_Object& data,Entities& entities) {
     // Static OpenDRIVE geometry is shared; no target state is looked up by ID.
     vehicle->pos_.SetInertiaPos(data.x,data.y,data.z,data.h,data.p,data.r);
     vehicle->SetSpeed(data.speed);
+    vehicle->pos_.SetVel(data.vx,data.vy,data.vz);
+    vehicle->pos_.SetAcc(data.ax,data.ay,data.az);
     return vehicle;
 }
 }
