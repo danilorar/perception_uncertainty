@@ -210,104 +210,48 @@ void write_perception(std::ofstream& file,const PerceptionFrame& raw,const Dropo
         file<<'\n';
     }
 }
-int run(const Options& options) {
-    fs::create_directories(options.output);
-    auto scenario_id=options.source.stem().string();
-    const std::string source_prefix="C_original_";
-    if(scenario_id.rfind(source_prefix,0)==0) scenario_id.erase(0,source_prefix.size());
-    const auto scene=prepare_scenario(options.source,options.output/"generated"/("C_"+options.controller+"_"+scenario_id+".xosc"));
-    const auto original_hash=fingerprint(scene.source),road_hash=fingerprint(scene.road);
-    if(options.duration>scene.duration_s+1e-8) throw std::invalid_argument("duration exceeds original scenario stop time");
-    AccConfig config; config.time_gap_s=options.time_gap;
-    config.set_speed_mps=options.set_speed<0 ? scene.reference.initial_speed():options.set_speed;
-    config.max_acceleration=scene.max_acceleration; config.max_deceleration=scene.max_deceleration;
-    write_config(options,scene,config);
-    EsminiAdapter engine(scene,options.output,options.resources,SensorConfig{},options.dt);
-    EsminiAcc acc_controller(config);
-    std::unique_ptr<EsminiAeb> aeb_controller;
-    if(options.controller=="aeb") aeb_controller=std::make_unique<EsminiAeb>(AebConfig{options.aeb_ttc_s,options.aeb_deceleration});
-    DetectionDropout iid(options.dropout_p,options.seed);
-    std::unique_ptr<MarkovDropout> markov;
-    if(options.dropout_model=="markov") {
-        std::vector<int> ids;
-        for(const auto& target:engine.truth().targets) ids.push_back(target.id); // Identity only; no target truth values enter uncertainty.
-        markov=std::make_unique<MarkovDropout>(options.dropout_p,options.mean_missing_s,
-            options.sensor_period,options.seed,ids,options.markov_init=="stationary");
+// Per-run CSV files, opened together with their header rows.
+struct RunLogs {
+    std::ofstream truth,perception,control,metrics,dropout_states;
+};
+RunLogs open_run_logs(const fs::path& output) {
+    RunLogs logs{open(output/"truth.csv"),open(output/"perceptions.csv"),
+                 open(output/"control.csv"),open(output/"metrics.csv"),
+                 open(output/"dropout_states.csv")};
+    logs.dropout_states<<"sequence,measurement_time_s,track_id,missing,changed,run_length_frames,raw_detected\n";
+    logs.truth<<"time_s,object_id,role,x_m,y_m,z_m,h_rad,speed_mps,length_m,width_m,height_m,center_x_m,center_y_m,center_z_m,object_type,object_category,vx_mps,vy_mps,vz_mps,ax_mps2,ay_mps2,az_mps2\n";
+    logs.perception<<"sequence,measurement_time_s,delivery_time_s,track_id,raw_detected,observed,dropped,raw_x_m,raw_y_m,raw_speed_mps,observed_x_m,observed_y_m,observed_speed_mps,raw_object_type,raw_object_category,raw_length_m,raw_width_m,observed_object_type,observed_object_category\n";
+    logs.control<<"time_s,perception_sequence,measurement_time_s,age_s,fresh,lead_id,observed_gap_m,requested_acceleration_mps2,desired_speed_mps,applied_acceleration_mps2,limited,close_gap_stop,aeb_active,observed_ttc_s\n";
+    logs.metrics<<"time_s,collision,engine_collision,minimum_distance_m,minimum_gap_m,ttc_s\n";
+    return logs;
+}
+void write_metrics(std::ofstream& file,double time,const StepMetrics& metrics,bool engine_collision) {
+    file<<time<<','<<metrics.collision<<','<<engine_collision<<','<<metrics.minimum_distance_m<<','<<metrics.gap_m<<','<<metrics.ttc_s<<'\n';
+}
+// One row per registered Markov chain, written after the chains advanced for this frame.
+void write_dropout_states(std::ofstream& file,const PerceptionFrame& ideal_frame,const MarkovDropout& markov_dropout) {
+    for(const auto& entry:markov_dropout.states()) {
+        const auto& state=entry.second;
+        const bool detected=std::any_of(ideal_frame.objects.begin(),ideal_frame.objects.end(),
+            [&](const Observation& object){return object.track_id==entry.first;});
+        file<<ideal_frame.sequence<<','<<ideal_frame.measurement_time_s<<','<<entry.first<<','<<state.missing<<','
+            <<state.changed<<','<<state.run_length<<','<<detected<<'\n';
     }
-    auto truth_log=open(options.output/"truth.csv"),perception_log=open(options.output/"perceptions.csv");
-    auto control_log=open(options.output/"control.csv"),metric_log=open(options.output/"metrics.csv");
-    auto state_log=open(options.output/"dropout_states.csv");
-    state_log<<"sequence,measurement_time_s,track_id,missing,changed,run_length_frames,raw_detected\n";
-    truth_log<<"time_s,object_id,role,x_m,y_m,z_m,h_rad,speed_mps,length_m,width_m,height_m,center_x_m,center_y_m,center_z_m,object_type,object_category,vx_mps,vy_mps,vz_mps,ax_mps2,ay_mps2,az_mps2\n";
-    perception_log<<"sequence,measurement_time_s,delivery_time_s,track_id,raw_detected,observed,dropped,raw_x_m,raw_y_m,raw_speed_mps,observed_x_m,observed_y_m,observed_speed_mps,raw_object_type,raw_object_category,raw_length_m,raw_width_m,observed_object_type,observed_object_category\n";
-    control_log<<"time_s,perception_sequence,measurement_time_s,age_s,fresh,lead_id,observed_gap_m,requested_acceleration_mps2,desired_speed_mps,applied_acceleration_mps2,limited,close_gap_stop,aeb_active,observed_ttc_s\n";
-    metric_log<<"time_s,collision,engine_collision,minimum_distance_m,minimum_gap_m,ttc_s\n";
-    EgoMotion ego; ego.state=engine.truth().ego;
-    if(std::abs(ego.state.speed-scene.reference.initial_speed())>1e-6) throw std::runtime_error("Initial ego speed does not match trajectory-derived initial state");
-    RunSummary summary;
-    PerceptionFrame cached;
-    const auto perception_stride=static_cast<std::uint64_t>(std::llround(options.sensor_period/options.dt));
-    std::uint64_t missing_streak=0,step=0;
-    std::uint64_t model_missing_frames=0,model_frames=0,longest_model_missing_frames=0;
-    double end_time=0; std::string end_reason="duration";
-    while(true) {
-        const auto world=engine.truth(); end_time=world.time_s;
-        if(std::abs(world.time_s-static_cast<double>(step)*options.dt)>1e-7) throw std::runtime_error("Simulation clock lost synchronization");
-        ego.state=world.ego; // Exact ego feedback, unaffected by uncertainty.
-        write_truth(truth_log,world.time_s,world.ego,"ego");
-        for(const auto& target:world.targets) write_truth(truth_log,world.time_s,target,"target");
-        const auto metrics=evaluate_truth(world); const bool native_collision=engine.collision();
-        metric_log<<world.time_s<<','<<metrics.collision<<','<<native_collision<<','<<metrics.minimum_distance_m<<','<<metrics.gap_m<<','<<metrics.ttc_s<<'\n';
-        if(metrics.collision!=native_collision) throw std::runtime_error("Native collision flag disagrees with truth-box evaluation");
-        summary.minimum_distance_m=std::min(summary.minimum_distance_m,metrics.minimum_distance_m);
-        summary.minimum_gap_m=std::min(summary.minimum_gap_m,metrics.gap_m);
-        summary.minimum_ttc_s=std::min(summary.minimum_ttc_s,metrics.ttc_s);
-        if(metrics.collision && !summary.collision) {
-            summary.collision=true; summary.first_collision_s=world.time_s;
-            summary.collision_ego_speed_mps=world.ego.speed;
-            for(const auto& target:world.targets) if(geometry(world.ego,target).collision)
-                summary.collision_relative_speed_mps=std::abs(geometry(world.ego,target).closing_speed_mps);
-            if(options.stop_on_collision) { end_reason="collision"; break; }
-        }
-        if(world.time_s>=options.duration-1e-8) break;
-        if(engine.quit()) { end_reason="scenario_stop"; break; }
-        const bool fresh=step%perception_stride==0;
-        if(fresh) {
-            const auto raw=engine.sense(step/perception_stride);
-            const auto processed=markov?markov->apply(raw):iid.apply(raw); // EXACTLY ONCE per sensor refresh.
-            if(markov) for(const auto& entry:markov->states()) {
-                const auto& state=entry.second;
-                const bool detected=std::any_of(raw.objects.begin(),raw.objects.end(),
-                    [&](const Observation& object){return object.track_id==entry.first;});
-                state_log<<raw.sequence<<','<<raw.measurement_time_s<<','<<entry.first<<','<<state.missing<<','
-                    <<state.changed<<','<<state.run_length<<','<<detected<<'\n';
-                ++model_frames;
-                if(state.missing) {
-                    ++model_missing_frames;
-                    longest_model_missing_frames=std::max(longest_model_missing_frames,state.run_length);
-                }
-            }
-            cached=processed.frame;
-            write_perception(perception_log,raw,processed);
-            ++summary.sensor_frames; summary.raw_detections+=raw.objects.size(); summary.dropped_detections+=processed.dropped_ids.size();
-            if(!raw.objects.empty() && cached.objects.empty()) ++missing_streak; else missing_streak=0;
-            summary.longest_missing_frames=std::max(summary.longest_missing_frames,missing_streak);
-        }
-        const ControllerInput input{world.time_s,options.dt,world.ego,cached};
-        const auto request=aeb_controller?aeb_controller->update(input):acc_controller.update(input);
-        if(request.aeb_active && summary.first_aeb_s<0) summary.first_aeb_s=world.time_s;
-        const auto applied=arbitrate(request,config);
-        summary.close_gap_stop_requested=summary.close_gap_stop_requested||request.close_gap_stop;
-        if(applied.acceleration_mps2<-.01 && summary.first_deceleration_s<0) summary.first_deceleration_s=world.time_s;
-        summary.minimum_acceleration_mps2=std::min(summary.minimum_acceleration_mps2,applied.acceleration_mps2);
-        control_log<<world.time_s<<','<<cached.sequence<<','<<cached.measurement_time_s<<','<<world.time_s-cached.measurement_time_s<<','<<fresh<<','
-                   <<request.lead_id<<','<<request.observed_gap_m<<','<<request.acceleration_mps2<<','<<request.desired_speed_mps<<','
-                   <<applied.acceleration_mps2<<','<<applied.limited<<','<<request.close_gap_stop<<','<<request.aeb_active<<','<<request.observed_ttc_s<<'\n';
-        advance_vehicle(ego,applied,options.dt,scene.reference);
-        engine.advance(ego,applied,options.dt); ++step;
-    }
-    if(fingerprint(scene.source)!=original_hash || fingerprint(scene.road)!=road_hash) throw std::runtime_error("Original data changed during run");
-    auto file=open(options.output/"summary.json");
+}
+void write_control(std::ofstream& file,double time,const PerceptionFrame& cached_observations,bool is_sensor_frame,
+                   const ControlRequest& request,const AppliedCommand& applied) {
+    file<<time<<','<<cached_observations.sequence<<','<<cached_observations.measurement_time_s<<','
+        <<time-cached_observations.measurement_time_s<<','<<is_sensor_frame<<','
+        <<request.lead_id<<','<<request.observed_gap_m<<','<<request.acceleration_mps2<<','<<request.desired_speed_mps<<','
+        <<applied.acceleration_mps2<<','<<applied.limited<<','<<request.close_gap_stop<<','<<request.aeb_active<<','<<request.observed_ttc_s<<'\n';
+}
+// Frame counts of the Markov chain states, across all target chains.
+struct MarkovStats {
+    std::uint64_t frames=0,missing_frames=0,longest_missing_frames=0;
+};
+void write_summary(const fs::path& output,const RunSummary& summary,const MarkovStats& markov_stats,bool uses_markov,
+                   const std::string& end_reason,double end_time,double ego_final_speed,double sensor_period) {
+    auto file=open(output/"summary.json");
     file<<"{\n  \"complete\": true,\n  \"collision\": "<<(summary.collision?"true":"false")<<",\n"
         <<"  \"end_reason\": "<<json(end_reason)<<",\n  \"duration_s\": "<<end_time<<",\n"
         <<"  \"first_collision_s\": "<<event_numeric(summary.first_collision_s)<<",\n"
@@ -319,15 +263,124 @@ int run(const Options& options) {
         <<"  \"first_aeb_s\": "<<event_numeric(summary.first_aeb_s)<<",\n"
         <<"  \"first_deceleration_s\": "<<event_numeric(summary.first_deceleration_s)<<",\n"
         <<"  \"minimum_acceleration_mps2\": "<<summary.minimum_acceleration_mps2<<",\n"
-        <<"  \"ego_final_speed_mps\": "<<ego.state.speed<<",\n"
+        <<"  \"ego_final_speed_mps\": "<<ego_final_speed<<",\n"
         <<"  \"sensor_frames\": "<<summary.sensor_frames<<",\n  \"raw_detections\": "<<summary.raw_detections<<",\n"
         <<"  \"dropped_detections\": "<<summary.dropped_detections<<",\n"
         <<"  \"realized_dropout_rate\": "<<(summary.raw_detections?static_cast<double>(summary.dropped_detections)/summary.raw_detections:0)<<",\n"
         <<"  \"longest_missing_frames\": "<<summary.longest_missing_frames<<",\n"
-        <<"  \"longest_missing_s\": "<<summary.longest_missing_frames*options.sensor_period<<",\n"
-        <<"  \"model_missing_fraction\": "<<(model_frames?numeric(static_cast<double>(model_missing_frames)/model_frames):"null")<<",\n"
-        <<"  \"longest_model_missing_frames\": "<<(markov?std::to_string(longest_model_missing_frames):"null")<<",\n"
+        <<"  \"longest_missing_s\": "<<summary.longest_missing_frames*sensor_period<<",\n"
+        <<"  \"model_missing_fraction\": "<<(markov_stats.frames?numeric(static_cast<double>(markov_stats.missing_frames)/markov_stats.frames):"null")<<",\n"
+        <<"  \"longest_model_missing_frames\": "<<(uses_markov?std::to_string(markov_stats.longest_missing_frames):"null")<<",\n"
         <<"  \"close_gap_stop_requested\": "<<(summary.close_gap_stop_requested?"true":"false")<<"\n}\n";
+}
+int run(const Options& options) {
+    // ===== 1. Initialization =====================================================
+    fs::create_directories(options.output);
+    auto scenario_id=options.source.stem().string();
+    const std::string source_prefix="C_original_";
+    if(scenario_id.rfind(source_prefix,0)==0) scenario_id.erase(0,source_prefix.size());
+    const auto scene=prepare_scenario(options.source,options.output/"generated"/("C_"+options.controller+"_"+scenario_id+".xosc"));
+    const auto original_hash=fingerprint(scene.source),road_hash=fingerprint(scene.road);
+    if(options.duration>scene.duration_s+1e-8) throw std::invalid_argument("duration exceeds original scenario stop time");
+
+    // ACC settings; its acceleration limits also bound the AEB request in arbitrate().
+    AccConfig acc_config; acc_config.time_gap_s=options.time_gap;
+    acc_config.set_speed_mps=options.set_speed<0 ? scene.reference.initial_speed():options.set_speed;
+    acc_config.max_acceleration=scene.max_acceleration; acc_config.max_deceleration=scene.max_deceleration;
+    write_config(options,scene,acc_config);
+
+    EsminiAdapter engine(scene,options.output,options.resources,SensorConfig{},options.dt);
+    EsminiAcc acc_controller(acc_config);
+    std::unique_ptr<EsminiAeb> aeb_controller;
+    if(options.controller=="aeb") aeb_controller=std::make_unique<EsminiAeb>(AebConfig{options.aeb_ttc_s,options.aeb_deceleration});
+
+    DetectionDropout iid_dropout(options.dropout_p,options.seed);
+    std::unique_ptr<MarkovDropout> markov_dropout;
+    if(options.dropout_model=="markov") {
+        std::vector<int> ids;
+        for(const auto& target:engine.truth().targets) ids.push_back(target.id); // Identity only; no target truth values enter uncertainty.
+        markov_dropout=std::make_unique<MarkovDropout>(options.dropout_p,options.mean_missing_s,
+            options.sensor_period,options.seed,ids,options.markov_init=="stationary");
+    }
+
+    auto logs=open_run_logs(options.output);
+    EgoMotion ego; ego.state=engine.truth().ego;
+    if(std::abs(ego.state.speed-scene.reference.initial_speed())>1e-6) throw std::runtime_error("Initial ego speed does not match trajectory-derived initial state");
+
+    const auto steps_per_sensor_frame=static_cast<std::uint64_t>(std::llround(options.sensor_period/options.dt));
+    PerceptionFrame cached_observations; // Latest filtered frame; reused on steps without a sensor refresh.
+    RunSummary summary;
+    MarkovStats markov_stats;
+    std::uint64_t missing_streak=0,step=0;
+    double end_time=0; std::string end_reason="duration";
+
+    // ===== 2. Simulation loop (one iteration per dt) =============================
+    while(true) {
+        // --- 2a. World truth: exact ego feedback, truth/metrics logs, collision check ---
+        const auto world=engine.truth(); end_time=world.time_s;
+        if(std::abs(world.time_s-static_cast<double>(step)*options.dt)>1e-7) throw std::runtime_error("Simulation clock lost synchronization");
+        ego.state=world.ego; // Exact ego feedback, unaffected by uncertainty.
+        write_truth(logs.truth,world.time_s,world.ego,"ego");
+        for(const auto& target:world.targets) write_truth(logs.truth,world.time_s,target,"target");
+        const auto metrics=evaluate_truth(world); const bool engine_collision=engine.collision();
+        write_metrics(logs.metrics,world.time_s,metrics,engine_collision);
+        if(metrics.collision!=engine_collision) throw std::runtime_error("Native collision flag disagrees with truth-box evaluation");
+        summary.minimum_distance_m=std::min(summary.minimum_distance_m,metrics.minimum_distance_m);
+        summary.minimum_gap_m=std::min(summary.minimum_gap_m,metrics.gap_m);
+        summary.minimum_ttc_s=std::min(summary.minimum_ttc_s,metrics.ttc_s);
+
+        // --- 2b. Stop conditions: first collision (only if stop_on_collision), duration, scenario end ---
+        if(metrics.collision && !summary.collision) {
+            summary.collision=true; summary.first_collision_s=world.time_s;
+            summary.collision_ego_speed_mps=world.ego.speed;
+            for(const auto& target:world.targets) if(geometry(world.ego,target).collision)
+                summary.collision_relative_speed_mps=std::abs(geometry(world.ego,target).closing_speed_mps);
+            if(options.stop_on_collision) { end_reason="collision"; break; }
+        }
+        if(world.time_s>=options.duration-1e-8) break;
+        if(engine.quit()) { end_reason="scenario_stop"; break; }
+
+        // --- 2c. Sensor refresh and Markov/IID filtering (every sensor_period only) ---
+        const bool is_sensor_frame=step%steps_per_sensor_frame==0;
+        if(is_sensor_frame) {
+            const auto ideal_frame=engine.sense(step/steps_per_sensor_frame);
+            const auto filtered=markov_dropout?markov_dropout->apply(ideal_frame):iid_dropout.apply(ideal_frame); // EXACTLY ONCE per sensor refresh.
+            if(markov_dropout) {
+                write_dropout_states(logs.dropout_states,ideal_frame,*markov_dropout);
+                for(const auto& entry:markov_dropout->states()) {
+                    const auto& state=entry.second;
+                    ++markov_stats.frames;
+                    if(state.missing) {
+                        ++markov_stats.missing_frames;
+                        markov_stats.longest_missing_frames=std::max(markov_stats.longest_missing_frames,state.run_length);
+                    }
+                }
+            }
+            cached_observations=filtered.frame;
+            write_perception(logs.perception,ideal_frame,filtered);
+            ++summary.sensor_frames; summary.raw_detections+=ideal_frame.objects.size(); summary.dropped_detections+=filtered.dropped_ids.size();
+            if(!ideal_frame.objects.empty() && cached_observations.objects.empty()) ++missing_streak; else missing_streak=0;
+            summary.longest_missing_frames=std::max(summary.longest_missing_frames,missing_streak);
+        }
+
+        // --- 2d. Controller: exact ego + cached observations -> request ---
+        const ControllerInput input{world.time_s,options.dt,world.ego,cached_observations};
+        const auto request=aeb_controller?aeb_controller->update(input):acc_controller.update(input);
+        if(request.aeb_active && summary.first_aeb_s<0) summary.first_aeb_s=world.time_s;
+
+        // --- 2e. Vehicle movement: actuator limits -> control log -> kinematics -> esmini ---
+        const auto applied=arbitrate(request,acc_config);
+        summary.close_gap_stop_requested=summary.close_gap_stop_requested||request.close_gap_stop;
+        if(applied.acceleration_mps2<-.01 && summary.first_deceleration_s<0) summary.first_deceleration_s=world.time_s;
+        summary.minimum_acceleration_mps2=std::min(summary.minimum_acceleration_mps2,applied.acceleration_mps2);
+        write_control(logs.control,world.time_s,cached_observations,is_sensor_frame,request,applied);
+        advance_vehicle(ego,applied,options.dt,scene.reference);
+        engine.advance(ego,applied,options.dt); ++step;
+    }
+
+    // ===== 3. Results ============================================================
+    if(fingerprint(scene.source)!=original_hash || fingerprint(scene.road)!=road_hash) throw std::runtime_error("Original data changed during run");
+    write_summary(options.output,summary,markov_stats,markov_dropout!=nullptr,end_reason,end_time,ego.state.speed,options.sensor_period);
     std::cout<<"Completed: "<<options.output<<"\ncollision="<<summary.collision<<", min_gap="<<summary.minimum_gap_m
              <<" m, min_TTC="<<summary.minimum_ttc_s<<" s, dropped="<<summary.dropped_detections<<'/'<<summary.raw_detections<<'\n';
     return 0;
