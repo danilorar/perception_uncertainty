@@ -70,6 +70,9 @@ def load_recording(run):
     config = json.loads((run / "run_config.json").read_text())
     if config.get("esmini_tag") != "v3.8.1":
         raise ValueError("This replay's ctypes ABI requires an esmini v3.8.1 recording/library.")
+    # Runs before this option existed always wrote detailed logs.
+    if not config.get("detailed_logs", True):
+        raise ValueError("Replay needs truth/perception/control logs; rerun acc_sim with --detailed-logs true.")
     truth = {}
     for row in rows(run / "truth.csv"):
         truth.setdefault(float(row["time_s"]), []).append(row)

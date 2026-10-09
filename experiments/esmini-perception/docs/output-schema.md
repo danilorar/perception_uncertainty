@@ -14,14 +14,18 @@ This page describes native `simulation/acc_cpp` outputs.
 | `run_config.json` | 参数、原输入/源码指纹、esmini commit、模型约定 / Settings, input/source hashes, commit, assumptions |
 | `generated/C_acc_<id>.xosc` | 外部自车状态接口和原目标轨迹；历史文件名 / External ego interface and original target trajectory; historical filename |
 | `generated/*.xodr` | 原道路字节一致快照 / Byte-identical road snapshot |
-| `truth.csv` | 逐时刻逐对象真值 / Per-time, per-object truth |
-| `perceptions.csv` | 逐感知帧原始/处理后目标审计 / Per-sensor-frame raw/processed target audit |
-| `dropout_states.csv` | Markov 状态和持续帧数；IID 仅表头 / Markov state and duration; header only for IID |
-| `control.csv` | 控制使用的缓存序号、请求与执行 / Consumed sequence, request and applied command |
-| `metrics.csv` | 同步真值风险与双碰撞检查 / Synchronized truth risk and dual collision checks |
+| `truth.csv` | 逐时刻逐对象真值 / Per-time, per-object truth；仅 `--detailed-logs true` / only with `--detailed-logs true` |
+| `perceptions.csv` | 逐感知帧原始/处理后目标审计 / Per-sensor-frame raw/processed target audit；仅 `--detailed-logs true` / only with `--detailed-logs true` |
+| `dropout_states.csv` | Markov 状态和持续帧数；IID 仅表头 / Markov state and duration; header only for IID；仅 `--detailed-logs true` / only with `--detailed-logs true` |
+| `control.csv` | 控制使用的缓存序号、请求与执行 / Consumed sequence, request and applied command；仅 `--detailed-logs true` / only with `--detailed-logs true` |
+| `metrics.csv` | 同步真值风险与双碰撞检查 / Synchronized truth risk and dual collision checks；仅 `--detailed-logs true` / only with `--detailed-logs true` |
 | `summary.json` | 安全和感知汇总，`complete=true` 正常完成 / Safety/perception summary; `complete=true` means successful completion |
 | `sim.dat`, `run.log` | 原生记录与引擎日志 / Native recording and engine log |
 | `sensor_replay/` | 可选 cone 回放输出 / Optional cone replay outputs |
+
+详细日志默认关闭。`run_comparison.py` 与 `run_markov_sensitivity.py` 显式开启，用于目标真值检查、`--validate` 与回放；单次运行需回放时加 `--detailed-logs true`。
+
+Detailed logs are off by default. `run_comparison.py` and `run_markov_sensitivity.py` enable them explicitly for target-truth checks, `--validate` and replay; add `--detailed-logs true` to a single run that will be replayed.
 
 ### 主结果 / Main results (`results.csv`)
 

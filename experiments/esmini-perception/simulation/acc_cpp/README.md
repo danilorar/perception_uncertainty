@@ -46,6 +46,7 @@ Repository-root `esmini/` and `build/_deps/esmini-src/` are independent. Do not 
 | `--aeb-deceleration` | 8.3385 m/s² | 0.85g，原生建立时间 0.6 s / 0.85g, native 0.6 s ramp |
 | `--time-gap` | 1.5 s | 仅 ACC 时距 / ACC time gap only |
 | `--set-speed` | 场景初始自车速度 / Initial ego speed | ACC 巡航目标 m/s；AEB 拒绝该选项 / ACC cruise speed m/s; rejected by AEB |
+| `--detailed-logs` | `false` | 另写 truth/perceptions/control/metrics/dropout_states CSV；回放和验证需要 / Also write the detailed CSVs; replay and validation need them |
 
 ```bash
 build/runner/acc_sim --config configs/ideal.ini --output-dir results/my_ideal_run
@@ -111,9 +112,9 @@ Each scenario has one deterministic ideal, 100 IID and three groups of 100 Marko
 
 ## 5. 感知 cone 回放 / Replay with the perception cone
 
-普通 `replayer --file sim.dat` 不恢复漏检。此工具用图形版 esminiLib 重放 `truth.csv`，按 `control.csv` 实际使用的序号查找 `perceptions.csv`。处理后目标列表非空显示 cone，单目标漏检隐藏 cone；目标真实运动始终可见。
+普通 `replayer --file sim.dat` 不恢复漏检。此工具用图形版 esminiLib 重放 `truth.csv`，按 `control.csv` 实际使用的序号查找 `perceptions.csv`。需要详细日志：批处理工具总是写出；单次运行需加 `--detailed-logs true`。处理后目标列表非空显示 cone，单目标漏检隐藏 cone；目标真实运动始终可见。
 
-Ordinary `replayer --file sim.dat` does not restore loss. This tool replays `truth.csv` with graphical esminiLib and looks up perception by the sequence consumed in `control.csv`. A nonempty processed list shows the cone; single-target loss hides it. True target motion stays visible.
+Ordinary `replayer --file sim.dat` does not restore loss. This tool replays `truth.csv` with graphical esminiLib and looks up perception by the sequence consumed in `control.csv`. It needs detailed logs: batch tools always write them; add `--detailed-logs true` to a single run. A nonempty processed list shows the cone; single-target loss hides it. True target motion stays visible.
 
 ```bash
 task_batch="$(cat results/latest.txt)"

@@ -45,7 +45,9 @@ def resolve_road(scenario):
 
 
 def execute(binary, scenario, folder, probability, seed, args, logfile=None):
-    command = [str(binary), "--scenario", str(scenario), "--output-dir", str(folder),
+    # Detailed logs are requested explicitly: the target-truth checks here and in
+    # run_markov_sensitivity.py, --validate, and replay_perception.py all read them.
+    command = [str(binary), "--detailed-logs", "true", "--scenario", str(scenario), "--output-dir", str(folder),
                "--dropout-p", str(probability), "--seed", str(seed), "--dt", str(args.dt),
                "--sensor-period", str(args.sensor_period), "--duration", str(args.duration),
                "--time-gap", str(args.time_gap), "--dropout-model", args.dropout_model,
