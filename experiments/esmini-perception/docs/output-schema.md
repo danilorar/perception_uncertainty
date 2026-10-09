@@ -10,6 +10,7 @@ This page describes native `simulation/acc_cpp` outputs.
 
 | 文件 / File | 内容 / Content |
 |---|---|
+| `results.csv` | 主结果：每个仿真步一行 / Main results: one row per simulation step |
 | `run_config.json` | 参数、原输入/源码指纹、esmini commit、模型约定 / Settings, input/source hashes, commit, assumptions |
 | `generated/C_acc_<id>.xosc` | 外部自车状态接口和原目标轨迹；历史文件名 / External ego interface and original target trajectory; historical filename |
 | `generated/*.xodr` | 原道路字节一致快照 / Byte-identical road snapshot |
@@ -21,6 +22,36 @@ This page describes native `simulation/acc_cpp` outputs.
 | `summary.json` | 安全和感知汇总，`complete=true` 正常完成 / Safety/perception summary; `complete=true` means successful completion |
 | `sim.dat`, `run.log` | 原生记录与引擎日志 / Native recording and engine log |
 | `sensor_replay/` | 可选 cone 回放输出 / Optional cone replay outputs |
+
+### 主结果 / Main results (`results.csv`)
+
+每个循环步一行，时间 `t_k = k·dt`：该时刻真值、当时可用的缓存观测，以及在 `t_k` 决定并作用于 `[t_k, t_k+dt)` 的指令。空单元表示该量不可用或非有限值，不表示零。
+
+One row per loop step at `t_k = k·dt`: truth at that time, the cached observation available then, and the command decided at `t_k` that acts over `[t_k, t_k+dt)`. An empty cell means the value is unavailable or non-finite, never zero.
+
+| 字段 / Fields | 含义 / Meaning |
+|---|---|
+| `step,time_s` | 步序号与真值时间 / Step index and truth time |
+| `ego_x_m,ego_y_m,ego_heading_rad,ego_speed_mps` | 准确自车真值 / Exact ego truth |
+| `ego_progress_m` | 沿参考路径的积分距离 / Integrated distance along the reference path |
+| `sensor_refreshed` | 本步是否新采样感知帧，0/1 / Whether a new sensor frame was taken at this step |
+| `perception_sequence,perception_age_s` | 所用缓存帧序号及其年龄；首帧前为空 / Cached frame in use and its age; empty before the first frame |
+| `ideal_detections,observed_detections,dropped_detections` | 该缓存帧的理想/保留/删除目标数；帧间重复，求和时只取 `sensor_refreshed=1` 行 / Counts for that cached frame; repeated between refreshes, so sum only rows with `sensor_refreshed=1` |
+| `selected_target_id,selected_target_gap_m,selected_target_ttc_s` | 控制器根据观测选出的目标及感知间隙/TTC（TTC 仅 AEB）；无选中目标时为空。漏检某目标时控制器仍可能选中另一可见目标 / Target the controller selected from observations, with perceived gap/TTC (TTC for AEB only); empty when none is selected. A missed object does not necessarily empty these: another visible object may be selected |
+| `controller_updated` | 本步是否计算新指令，0/1 / Whether a new command was computed at this step |
+| `desired_speed_mps,requested_acceleration_mps2,applied_acceleration_mps2,acceleration_limited` | 控制请求、限幅后执行值与是否限幅 / Request, bounded applied value, and whether it was limited |
+| `aeb_active` / `close_gap_stop` | AEB 激活（仅 AEB）/ ACC <1 m 停车请求（仅 ACC）；另一控制器为空 / AEB active (AEB only) / ACC <1 m stop request (ACC only); empty for the other controller |
+| `truth_min_gap_m,truth_min_gap_target_id` | 所有路径内目标中的最小真值包围盒间隙及其目标；无路径内目标时为空 / Smallest true box gap over in-path targets and that target; empty without an in-path target |
+| `truth_min_ttc_s` | 路径内接近目标的最小真值 TTC；空表示没有接近中的目标，不是 TTC=0。可能与最小间隙属于不同目标 / Smallest true TTC over closing in-path targets; empty means no closing target, not TTC=0. May belong to a different target than the minimum gap |
+| `truth_min_distance_m,collision` | 任意目标的最小包围盒距离与真值碰撞，0/1 / Smallest box distance to any target and truth collision |
+
+`selected_target_*` 是控制器基于漏检后观测的判断；`truth_min_*` 是对所有目标的真值评价，两者可能指向不同对象。
+
+`selected_target_*` reflects the controller's view from post-dropout observations; `truth_min_*` is truth over all targets. They may refer to different objects.
+
+运行结束时最后一行只记录真值：碰撞停止（仅 `stop_on_collision=true`）、到达时长或场景结束时，不再采样感知、不计算新指令，`sensor_refreshed=0`、`controller_updated=0`，指令和选中目标列为空。上一条指令在前一行，已作用于最后一个步长。
+
+The final row records truth only. When the run stops at first collision (only with `stop_on_collision=true`), at the duration, or at scenario end, no new sensor frame or command is computed: `sensor_refreshed=0`, `controller_updated=0`, and the command and selected-target columns are empty. The previous command is in the preceding row and already acted over the last step.
 
 ### 真值 / Truth
 

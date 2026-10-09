@@ -69,7 +69,8 @@ def execute(binary, scenario, folder, probability, seed, args, logfile=None):
 
 def validate_pair(ideal, zero, repeat, dropout, missing):
     # Compare recorded decisions/physics, not path-containing config/log text.
-    for name in ("truth.csv", "perceptions.csv", "control.csv", "metrics.csv", "summary.json", "dropout_states.csv"):
+    for name in ("truth.csv", "perceptions.csv", "control.csv", "metrics.csv", "summary.json", "dropout_states.csv",
+                 "results.csv"):
         if (ideal / name).read_bytes() != (zero / name).read_bytes():
             raise RuntimeError("Identity equivalence failed: " + name)
         if (dropout / name).read_bytes() != (repeat / name).read_bytes():

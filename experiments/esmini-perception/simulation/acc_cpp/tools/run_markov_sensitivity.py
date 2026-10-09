@@ -18,7 +18,7 @@ import subprocess
 import sys
 from run_comparison import ROOT, execute, resolve_road, sha
 
-RECORDINGS = ("truth.csv", "perceptions.csv", "control.csv", "metrics.csv")
+RECORDINGS = ("truth.csv", "perceptions.csv", "control.csv", "metrics.csv", "results.csv")
 
 
 def write_csv(path, rows):

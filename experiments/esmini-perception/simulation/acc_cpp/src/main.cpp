@@ -212,12 +212,18 @@ void write_perception(std::ofstream& file,const PerceptionFrame& raw,const Dropo
 }
 // Per-run CSV files, opened together with their header rows.
 struct RunLogs {
-    std::ofstream truth,perception,control,metrics,dropout_states;
+    std::ofstream truth,perception,control,metrics,dropout_states,results;
 };
 RunLogs open_run_logs(const fs::path& output) {
     RunLogs logs{open(output/"truth.csv"),open(output/"perceptions.csv"),
                  open(output/"control.csv"),open(output/"metrics.csv"),
-                 open(output/"dropout_states.csv")};
+                 open(output/"dropout_states.csv"),open(output/"results.csv")};
+    logs.results<<"step,time_s,ego_x_m,ego_y_m,ego_heading_rad,ego_speed_mps,ego_progress_m,"
+                   "sensor_refreshed,perception_sequence,perception_age_s,ideal_detections,observed_detections,dropped_detections,"
+                   "selected_target_id,selected_target_gap_m,selected_target_ttc_s,"
+                   "controller_updated,desired_speed_mps,requested_acceleration_mps2,applied_acceleration_mps2,acceleration_limited,"
+                   "aeb_active,close_gap_stop,"
+                   "truth_min_gap_m,truth_min_gap_target_id,truth_min_ttc_s,truth_min_distance_m,collision\n";
     logs.dropout_states<<"sequence,measurement_time_s,track_id,missing,changed,run_length_frames,raw_detected\n";
     logs.truth<<"time_s,object_id,role,x_m,y_m,z_m,h_rad,speed_mps,length_m,width_m,height_m,center_x_m,center_y_m,center_z_m,object_type,object_category,vx_mps,vy_mps,vz_mps,ax_mps2,ay_mps2,az_mps2\n";
     logs.perception<<"sequence,measurement_time_s,delivery_time_s,track_id,raw_detected,observed,dropped,raw_x_m,raw_y_m,raw_speed_mps,observed_x_m,observed_y_m,observed_speed_mps,raw_object_type,raw_object_category,raw_length_m,raw_width_m,observed_object_type,observed_object_category\n";
@@ -244,6 +250,42 @@ void write_control(std::ofstream& file,double time,const PerceptionFrame& cached
         <<time-cached_observations.measurement_time_s<<','<<is_sensor_frame<<','
         <<request.lead_id<<','<<request.observed_gap_m<<','<<request.acceleration_mps2<<','<<request.desired_speed_mps<<','
         <<applied.acceleration_mps2<<','<<applied.limited<<','<<request.close_gap_stop<<','<<request.aeb_active<<','<<request.observed_ttc_s<<'\n';
+}
+// Counts of the cached (filtered) frame; unavailable until the first sensor refresh.
+struct CachedFrameCounts {
+    bool available=false;
+    std::size_t ideal_detections=0,dropped_detections=0;
+};
+// Writes the value, or an empty cell when it is unavailable (non-finite).
+void write_finite(std::ofstream& file,double value) { if(std::isfinite(value)) file<<value; }
+// One results.csv row per loop iteration. A terminal row has no new command:
+// request/applied are null and their columns stay empty.
+void write_result(std::ofstream& file,std::uint64_t step,const WorldTruthFrame& world,double ego_progress_m,
+                  bool sensor_refreshed,const PerceptionFrame& cached_observations,const CachedFrameCounts& counts,
+                  bool is_aeb,const ControlRequest* request,const AppliedCommand* applied,const StepMetrics& metrics) {
+    const auto& ego=world.ego;
+    file<<step<<','<<world.time_s<<','<<ego.pose.x<<','<<ego.pose.y<<','<<ego.pose.h<<','<<ego.speed<<','<<ego_progress_m<<','
+        <<sensor_refreshed<<',';
+    if(counts.available)
+        file<<cached_observations.sequence<<','<<world.time_s-cached_observations.measurement_time_s<<','
+            <<counts.ideal_detections<<','<<cached_observations.objects.size()<<','<<counts.dropped_detections<<',';
+    else file<<",,,,,";
+    const bool has_selected_target=request && request->lead_id>=0;
+    if(has_selected_target) {
+        file<<request->lead_id<<','; write_finite(file,request->observed_gap_m); file<<',';
+        if(is_aeb) write_finite(file,request->observed_ttc_s);
+        file<<',';
+    } else file<<",,,";
+    if(request && applied) {
+        file<<1<<','<<request->desired_speed_mps<<','<<request->acceleration_mps2<<','<<applied->acceleration_mps2<<','<<applied->limited<<',';
+        if(is_aeb) file<<request->aeb_active<<',';
+        else file<<','<<request->close_gap_stop;
+        file<<',';
+    } else file<<0<<",,,,,,,";
+    write_finite(file,metrics.gap_m); file<<',';
+    if(metrics.target_id>=0) file<<metrics.target_id;
+    file<<','; write_finite(file,metrics.ttc_s); file<<',';
+    write_finite(file,metrics.minimum_distance_m); file<<','<<metrics.collision<<'\n';
 }
 // Frame counts of the Markov chain states, across all target chains.
 struct MarkovStats {
@@ -309,6 +351,8 @@ int run(const Options& options) {
 
     const auto steps_per_sensor_frame=static_cast<std::uint64_t>(std::llround(options.sensor_period/options.dt));
     PerceptionFrame cached_observations; // Latest filtered frame; reused on steps without a sensor refresh.
+    CachedFrameCounts cached_counts;
+    const bool is_aeb=aeb_controller!=nullptr;
     RunSummary summary;
     MarkovStats markov_stats;
     std::uint64_t missing_streak=0,step=0;
@@ -330,15 +374,19 @@ int run(const Options& options) {
         summary.minimum_ttc_s=std::min(summary.minimum_ttc_s,metrics.ttc_s);
 
         // --- 2b. Stop conditions: first collision (only if stop_on_collision), duration, scenario end ---
+        // A terminal results row records truth at this time, without a new sensor frame or command.
+        const auto write_terminal_result=[&]{
+            write_result(logs.results,step,world,ego.progress_m,false,cached_observations,cached_counts,is_aeb,nullptr,nullptr,metrics);
+        };
         if(metrics.collision && !summary.collision) {
             summary.collision=true; summary.first_collision_s=world.time_s;
             summary.collision_ego_speed_mps=world.ego.speed;
             for(const auto& target:world.targets) if(geometry(world.ego,target).collision)
                 summary.collision_relative_speed_mps=std::abs(geometry(world.ego,target).closing_speed_mps);
-            if(options.stop_on_collision) { end_reason="collision"; break; }
+            if(options.stop_on_collision) { end_reason="collision"; write_terminal_result(); break; }
         }
-        if(world.time_s>=options.duration-1e-8) break;
-        if(engine.quit()) { end_reason="scenario_stop"; break; }
+        if(world.time_s>=options.duration-1e-8) { write_terminal_result(); break; }
+        if(engine.quit()) { end_reason="scenario_stop"; write_terminal_result(); break; }
 
         // --- 2c. Sensor refresh and Markov/IID filtering (every sensor_period only) ---
         const bool is_sensor_frame=step%steps_per_sensor_frame==0;
@@ -357,6 +405,7 @@ int run(const Options& options) {
                 }
             }
             cached_observations=filtered.frame;
+            cached_counts={true,ideal_frame.objects.size(),filtered.dropped_ids.size()};
             write_perception(logs.perception,ideal_frame,filtered);
             ++summary.sensor_frames; summary.raw_detections+=ideal_frame.objects.size(); summary.dropped_detections+=filtered.dropped_ids.size();
             if(!ideal_frame.objects.empty() && cached_observations.objects.empty()) ++missing_streak; else missing_streak=0;
@@ -374,6 +423,7 @@ int run(const Options& options) {
         if(applied.acceleration_mps2<-.01 && summary.first_deceleration_s<0) summary.first_deceleration_s=world.time_s;
         summary.minimum_acceleration_mps2=std::min(summary.minimum_acceleration_mps2,applied.acceleration_mps2);
         write_control(logs.control,world.time_s,cached_observations,is_sensor_frame,request,applied);
+        write_result(logs.results,step,world,ego.progress_m,is_sensor_frame,cached_observations,cached_counts,is_aeb,&request,&applied,metrics);
         advance_vehicle(ego,applied,options.dt,scene.reference);
         engine.advance(ego,applied,options.dt); ++step;
     }
