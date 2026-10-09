@@ -56,37 +56,89 @@ MarkovDropout::MarkovDropout(double p,double mean_missing_s,double period_s,
         throw std::invalid_argument("Markov target IDs must be unique nonnegative integers");
 }
 DropoutResult MarkovDropout::apply(const PerceptionFrame& ideal) {
-    if(!std::isfinite(ideal.measurement_time_s)) throw std::invalid_argument("Invalid Markov measurement time");
-    if(initialized_ && ideal.sequence==last_sequence_) {
-        if(std::abs(ideal.measurement_time_s-last_time_)>1e-8)
+    // --- 1. Frame validation -------------------------------------------------
+    const std::uint64_t sequence = ideal.sequence;
+    const double measurement_time_s = ideal.measurement_time_s;
+    if (!std::isfinite(measurement_time_s)) {
+        throw std::invalid_argument("Invalid Markov measurement time");
+    }
+
+    const bool is_repeated_frame = initialized_ && sequence == last_sequence_;
+    if (is_repeated_frame) {
+        const double time_mismatch_s = std::abs(measurement_time_s - last_time_);
+        if (time_mismatch_s > 1e-8) {
             throw std::invalid_argument("Repeated sequence has another measurement time");
+        }
         return cached_; // Reading an already processed frame must not advance state.
     }
-    if((!initialized_ && ideal.sequence!=0)||
-       (initialized_ && (ideal.sequence!=last_sequence_+1||
-        std::abs(ideal.measurement_time_s-last_time_-period_)>1e-7)))
+
+    bool is_consecutive_frame;
+    if (!initialized_) {
+        is_consecutive_frame = sequence == 0;
+    } else {
+        const bool is_next_sequence = sequence == last_sequence_ + 1;
+        const double period_error_s = std::abs(measurement_time_s - last_time_ - period_);
+        const bool is_off_sensor_clock = period_error_s > 1e-7;
+        is_consecutive_frame = is_next_sequence && !is_off_sensor_clock;
+    }
+    if (!is_consecutive_frame) {
         throw std::invalid_argument("Markov requires consecutive perception frames at sensor-period");
-    for(const auto& object:ideal.objects) if(!states_.count(object.track_id))
-        throw std::invalid_argument("Ideal detection has an unregistered Markov target ID");
-    for(auto& entry:states_) {
-        auto& state=entry.second;
-        if(!initialized_) {
-            state.missing=probability_==1||(stationary_&&markov_draw(seed_,0,entry.first,true)<probability_);
-            state.changed=false; state.run_length=1;
-        } else {
-            const bool previous=state.missing;
-            const double draw=markov_draw(seed_,ideal.sequence,entry.first,false);
-            state.missing=previous ? !(draw<parameters_.recover) : draw<parameters_.enter_missing;
-            state.changed=state.missing!=previous;
-            state.run_length=state.changed?1:state.run_length+1;
+    }
+
+    for (const auto& object : ideal.objects) {
+        const bool is_registered = states_.count(object.track_id) > 0;
+        if (!is_registered) {
+            throw std::invalid_argument("Ideal detection has an unregistered Markov target ID");
         }
     }
-    cached_.frame=ideal; cached_.frame.objects.clear(); cached_.dropped_ids.clear();
-    for(const auto& object:ideal.objects) {
-        if(states_.at(object.track_id).missing) cached_.dropped_ids.push_back(object.track_id);
-        else cached_.frame.objects.push_back(object);
+
+    // --- 2. State updates: every registered chain advances once per frame ----
+    for (auto& entry : states_) {
+        const int target_id = entry.first;
+        MarkovState& state = entry.second;
+
+        if (!initialized_) {
+            const bool starts_missing =
+                probability_ == 1 ||
+                (stationary_ && markov_draw(seed_, 0, target_id, true) < probability_);
+            state.missing = starts_missing;
+            state.changed = false;
+            state.run_length = 1;
+        } else {
+            const bool was_missing = state.missing;
+            const double draw = markov_draw(seed_, sequence, target_id, false);
+            if (was_missing) {
+                const bool recovers = draw < parameters_.recover;
+                state.missing = !recovers;
+            } else {
+                const bool enters_missing = draw < parameters_.enter_missing;
+                state.missing = enters_missing;
+            }
+            state.changed = state.missing != was_missing;
+            if (state.changed) {
+                state.run_length = 1;
+            } else {
+                state.run_length = state.run_length + 1;
+            }
+        }
     }
-    initialized_=true; last_sequence_=ideal.sequence; last_time_=ideal.measurement_time_s;
+
+    // --- 3. Observation filtering: drop objects whose chain is missing -------
+    cached_.frame = ideal;
+    cached_.frame.objects.clear();
+    cached_.dropped_ids.clear();
+    for (const auto& object : ideal.objects) {
+        const bool is_missing = states_.at(object.track_id).missing;
+        if (is_missing) {
+            cached_.dropped_ids.push_back(object.track_id);
+        } else {
+            cached_.frame.objects.push_back(object);
+        }
+    }
+
+    initialized_ = true;
+    last_sequence_ = sequence;
+    last_time_ = measurement_time_s;
     return cached_;
 }
 } // namespace accsim
