@@ -16,7 +16,6 @@ Selected policy: retain reports and summary CSVs, ignore bulk raw results. Run G
 | `simulation/acc_cpp/reports/` | 提交 / Track | 精选报告、汇总、参数和指纹 / Selected reports, summaries, settings, hashes |
 | `simulation/acc_cpp/build/` | 忽略，本机保留 / Ignore, retain locally | 可重建引擎源码缓存与编译产物 / Rebuildable source cache and products |
 | `simulation/acc_cpp/results/` | 忽略，本机保留 / Ignore, retain locally | 逐帧 CSV、DAT、日志、图像和视频 / Frame CSVs, DAT, logs, images, videos |
-| `simulation/generated/` | 忽略，按需生成 / Ignore, regenerate | Python 教学派生场景 / Derived Python teaching scenarios |
 | 下载的引擎、虚拟环境、缓存、GUI 日志 / Downloads, environments, caches, GUI logs | 忽略 / Ignore | 本机产物 / Local products |
 
 原生 `build_native.py` 自行下载依赖，不要求根目录 `esmini/` 子模块已初始化。GUI 回放另需完整图形版安装。根目录 `esmini/` 是独立子模块，不能用普通文件方式随 experiments 提交。

@@ -23,9 +23,6 @@ esmini-perception/
       reports/                # 可提交的精选结果 / Selected results for Git
       third_party/            # 所需 XML 源码与上游许可 / Required XML code and licenses
       build/ results/         # 本机生成，不提交 / Local generated files, ignored
-    *.py                      # Python 教学流程及共享 API / Python examples and shared API
-    generated/                # 按需生成的 Python 场景副本 / Generated Python scenario copies
-  tests/                      # Python 教学模型测试 / Python model tests
 ```
 
 ## 从零运行 / Start from a clean checkout
@@ -120,7 +117,10 @@ Replay requires a viewer-enabled v3.8.1 library and model resources. It looks in
 | [验证记录 / Validation](docs/validation.md) | 当前检查与历史实验的区别 / Current checks and historical evidence |
 | [GitHub 指南 / GitHub guide](docs/github-workflow.md) | 提交边界、结果导出、Git 命令 / Tracking policy, exports, Git commands |
 | [精选报告 / Selected reports](simulation/acc_cpp/reports/README.md) | AEB 敏感性、ACC 历史结果、seed10 演示 / AEB sensitivity, historical ACC, seed10 demo |
-| [Python 教学示例 / Python examples](simulation/README.md) | 早期简化 AEB，与原生实验分开 / Earlier simplified AEB, separate from native runs |
+
+早期 Python 简化 AEB 示例已移除，原生流程为唯一实现；如需查看，见 Git 提交 `3792c21` 及更早版本的 `simulation/*.py`。
+
+The earlier simplified Python AEB examples were removed; the native workflow is the only implementation. They remain in Git history as `simulation/*.py` at commit `3792c21` and earlier.
 
 `1554431` 在当前参数下理想感知也碰撞，不能把所有碰撞归因于漏检。Markov 参数是设定误差的敏感性研究，尚未用真实传感器数据校准。
 

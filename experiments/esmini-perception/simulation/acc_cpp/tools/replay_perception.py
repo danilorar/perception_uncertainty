@@ -19,11 +19,37 @@ import time
 import xml.etree.ElementTree as ET
 import zlib
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from esmini_api import State
-
 SENSOR_FEATURE = 1  # roadgeom::NODE_MASK_OBJECT_SENSORS in esmini v3.8.1
 EPS = 1e-8
+
+
+class State(C.Structure):
+    """SE_ScenarioObjectState: simulation truth, not a sensor measurement packet.
+
+    The ABI uses double-precision coordinates. Changing field order or types
+    without checking the matching esminiLib.hpp can corrupt the returned data.
+    """
+
+    _fields_ = [
+        ("id", C.c_int), ("model_id", C.c_int), ("ctrl_type", C.c_int),
+        ("timestamp", C.c_double),
+        # World position [m] and orientation [rad]. Position is a reference point,
+        # which can differ from the bounding-box centre used for gap calculation.
+        ("x", C.c_double), ("y", C.c_double), ("z", C.c_double),
+        ("h", C.c_double), ("p", C.c_double), ("r", C.c_double),
+        ("roadId", C.c_uint32), ("junctionId", C.c_uint32),
+        ("t", C.c_double), ("laneId", C.c_int),
+        ("laneOffset", C.c_double), ("s", C.c_double),
+        ("speed", C.c_double),  # m/s, not km/h
+        # Bounding-box centre offsets and dimensions [m].
+        ("centerOffsetX", C.c_double), ("centerOffsetY", C.c_double),
+        ("centerOffsetZ", C.c_double), ("width", C.c_double),
+        ("length", C.c_double), ("height", C.c_double),
+        # Integer enums: interpret category in the context of its main type.
+        ("objectType", C.c_int), ("objectCategory", C.c_int),
+        ("wheel_angle", C.c_double), ("wheel_rot", C.c_double),
+        ("visibilityMask", C.c_int),
+    ]
 
 
 class Image(C.Structure):

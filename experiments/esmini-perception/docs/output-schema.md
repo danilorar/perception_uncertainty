@@ -2,9 +2,9 @@
 
 作者 / Author: Zhuo Ma
 
-本页先说明 `simulation/acc_cpp` 原生结果，再说明 Python 教学结果。两者参数、控制器和 CSV 格式不同，分析时不要混用。
+本页说明 `simulation/acc_cpp` 原生结果。
 
-Native `simulation/acc_cpp` outputs are described first, followed by Python teaching outputs. Parameters, controllers and CSV formats differ; do not mix them in analysis.
+This page describes native `simulation/acc_cpp` outputs.
 
 ## 原生单次运行 / Native single run
 
@@ -88,21 +88,3 @@ Control is logged at request time `t_k`. Truth/metrics include initialization an
 ideal 是确定性参考，不是随机样本。触发延迟均值只含已触发运行，接触速度均值只含碰撞运行；计数用于解释选择范围。精选导出不含逐帧日志，重新回放需保留本机原运行或重跑。
 
 Ideal is deterministic, not a random sample. Mean trigger delay includes triggered runs only; mean contact speed includes colliding runs only. Counts explain these subsets. Compact exports omit frame logs; replay needs local raw runs or a rerun.
-
-## Python 教学结果 / Python teaching outputs
-
-教学入口输出 `aeb_telemetry.csv`、`run_config.json`、`sim.dat`、`run.log`。纯 ideal sensor 输出 `sensor_ids.csv`，原始可执行回放输出 `states.csv`。
-
-Teaching entries produce `aeb_telemetry.csv`, `run_config.json`, `sim.dat` and `run.log`. Ideal sensor replay writes `sensor_ids.csv`; executable trajectory replay writes `states.csv`.
-
-| 字段 / Fields | 含义 / Meaning |
-|---|---|
-| `raw_detected_ids,observed_ids,dropped_ids` | 分号分隔的理想/保留/删除 ID / Semicolon-separated ideal/retained/deleted IDs |
-| `raw_target_detected,target_detected,target_dropped` | 单目标检测审计，0/1 / Single-target detection audit |
-| `ego_*`, `target_*`, `gap_m`, `closing_speed_mps`, `ttc_s` | 真值状态及纵向风险 / Truth state and longitudinal risk |
-| `observed_target_*`, `observed_gap_m`, `observed_ttc_s` | 目标检测存在时的观测，否则空 / Observed target properties/risk, otherwise empty |
-| `acceleration_command_mps2,aeb_active,collision` | 简化 AEB 请求、锁存、引擎碰撞 / Simplified AEB command, latch, engine collision |
-
-教学控制器在目标缺失时将风险输入屏蔽为 gap=∞、closing=0、in_path=false；已触发制动仍保持。其 `comparison.csv` 漏检率为 dropped_target_samples/raw_target_samples，最长缺失不含原本不在 sensor 内的时段。
-
-When a target is missing, teaching controller risk input is gated to gap=∞, closing=0 and in_path=false; active braking stays latched. Its comparison miss rate is dropped_target_samples/raw_target_samples, and longest loss excludes periods outside the ideal sensor.

@@ -2,9 +2,9 @@
 
 作者 / Author: Zhuo Ma
 
-本页描述 `simulation/acc_cpp/` 原生闭环。上层 Python 教学 AEB 使用另一套控制逻辑，见 [Python 示例](../simulation/README.md)。
+本页描述 `simulation/acc_cpp/` 原生闭环；构建与运行命令见 [原生运行指南](../simulation/acc_cpp/README.md)。
 
-This page describes the native loop in `simulation/acc_cpp/`. The Python teaching AEB above it uses separate control logic; see [Python examples](../simulation/README.md).
+This page describes the native loop in `simulation/acc_cpp/`; see the [native guide](../simulation/acc_cpp/README.md) for build and run commands.
 
 ## 文件与依赖 / Files and dependencies
 
