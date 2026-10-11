@@ -23,6 +23,13 @@ typedef struct { double desired_speed_mps, observed_gap_m; int lead_id; } ACCSIM
 ACCSIM_API int ACCSIM_NativeAccStep(const ACCSIM_Object* ego, const ACCSIM_Object* observations,
                                    int count, const ACCSIM_AccConfig* config, double dt,
                                    ACCSIM_AccOutput* output);
+// Register before SE_Init; esmini owns each persistent controller instance.
+ACCSIM_API void ACCSIM_RegisterPersistentAcc(void);
+typedef struct {
+    double time_s, input_speed_mps, desired_speed_mps, observed_gap_m;
+    int lead_id, target_count;
+} ACCSIM_PersistentAccOutput;
+ACCSIM_API int ACCSIM_GetPersistentAccOutput(ACCSIM_PersistentAccOutput* output);
 // Stateful adapter to the unmodified R157 ReferenceDriver AEB component.
 // The opaque context belongs to ONE run; no running-scenario target lookup.
 typedef struct { double ttc_s,max_deceleration_mps2; } ACCSIM_AebConfig;

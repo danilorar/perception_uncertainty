@@ -10,13 +10,14 @@ class EsminiAdapter {
     std::vector<int> target_ids_,sensor_buffer_;
 public:
     EsminiAdapter(const PreparedScenario& scenario,const std::filesystem::path& output,
-                  const std::filesystem::path& resource_home,const SensorConfig& sensor,double dt);
+                  const std::filesystem::path& resource_home,const SensorConfig& sensor,double dt, bool native_acc=false);
     ~EsminiAdapter();
     EsminiAdapter(const EsminiAdapter&)=delete;
     EsminiAdapter& operator=(const EsminiAdapter&)=delete;
     WorldTruthFrame truth() const;
     PerceptionFrame sense(std::uint64_t sequence) const;
     void advance(const EgoMotion& ego,const AppliedCommand& command,double dt);
+    void advance_native(double dt);
     bool quit() const;
     bool collision() const;
 };

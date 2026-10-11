@@ -1,9 +1,10 @@
 // Author: Zhuo Ma
-// Experiment scheduler: truth -> ideal snapshot -> dropout -> native controller -> plant.
+// ACC runs inside esmini; AEB uses the perception -> controller -> custom plant loop.
 #include "accsim/control.hpp"
 #include "accsim/engine.hpp"
 #include "accsim/metrics.hpp"
 #include "accsim/perception.hpp"
+#include "native_acc_bridge.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -26,6 +27,7 @@ struct Options {
     std::string dropout_model="markov",markov_init="stationary",controller="aeb";
     double aeb_ttc_s=1.5,aeb_deceleration=.85*9.81;
     bool stop_on_collision=true;
+    bool native_reference=false;
     bool detailed_logs=false; // truth/perceptions/control/metrics/dropout_states CSVs
     std::uint64_t seed=42;
 };
@@ -66,6 +68,7 @@ Options parse(int argc,char** argv) {
                      <<"  --duration 10 --time-gap 1.5 --set-speed MPS --esmini-home RESOURCES\n"
                      <<"  --dropout-model markov|iid --mean-missing .5 --markov-init stationary|normal\n"
                      <<"  --controller aeb|acc --aeb-ttc 1.5 --aeb-deceleration 8.3385\n"
+                     <<"  ACC currently uses all targets with dropout-p 0; --native-reference true selects live native targets\n"
                      <<"  --stop-on-collision true|false (false is for full-horizon truth-reference validation)\n"
                      <<"  --detailed-logs true|false (default false; validation and replay need true)\n"
                      <<"Headless native controller simulation; sim.dat can be viewed with esmini replayer.\n";
@@ -74,7 +77,7 @@ Options parse(int argc,char** argv) {
         if(key.rfind("--",0)!=0 || i+1>=argc) throw std::invalid_argument("Expected --option value: "+key);
         const auto value=std::string(argv[++i]); if(key!="--config") values[key.substr(2)]=value;
     }
-    const std::vector<std::string> known={"scenario","output-dir","esmini-home","dt","sensor-period","duration","dropout-p","time-gap","set-speed","seed","dropout-model","mean-missing","markov-init","controller","aeb-ttc","aeb-deceleration","stop-on-collision","detailed-logs"};
+    const std::vector<std::string> known={"scenario","output-dir","esmini-home","dt","sensor-period","duration","dropout-p","time-gap","set-speed","seed","dropout-model","mean-missing","markov-init","controller","aeb-ttc","aeb-deceleration","stop-on-collision","detailed-logs","native-reference"};
     for(const auto& value:values) if(std::find(known.begin(),known.end(),value.first)==known.end())
         throw std::invalid_argument("Unknown option: "+value.first);
     Options o;
@@ -100,6 +103,14 @@ Options parse(int argc,char** argv) {
         if(value!="true" && value!="false") throw std::invalid_argument("detailed-logs must be true or false");
         o.detailed_logs=value=="true";
     }
+    if(values.count("native-reference")) {
+        const auto& value=values.at("native-reference");
+        if(value!="true" && value!="false") throw std::invalid_argument("native-reference must be true or false");
+        o.native_reference=value=="true";
+    }
+    if(o.native_reference && o.controller!="acc") throw std::invalid_argument("native-reference requires ACC");
+    if(o.controller=="acc" && o.dropout_p!=0)
+        throw std::invalid_argument("Persistent ACC currently requires dropout-p 0; uncertainty is not connected yet");
     if(o.aeb_ttc_s<=0 || o.aeb_deceleration<=0) throw std::invalid_argument("Invalid AEB parameters");
     if(o.controller=="aeb" && values.count("set-speed"))
         throw std::invalid_argument("AEB nominal driver holds current speed; --set-speed belongs to ACC");
@@ -151,13 +162,16 @@ std::string fingerprint(const fs::path& path) {
 }
 void write_config(const Options& o,const PreparedScenario& scene,const AccConfig& acc) {
     auto file=open(o.output/"run_config.json");
-    const auto transitions=o.dropout_model=="markov"?markov_parameters(o.dropout_p,o.mean_missing_s,o.sensor_period):MarkovParameters{};
+    const auto transitions=o.controller=="aeb" && o.dropout_model=="markov"?markov_parameters(o.dropout_p,o.mean_missing_s,o.sensor_period):MarkovParameters{};
     file<<"{\n  \"schema_version\": 3,\n  \"author\": \"Zhuo Ma\",\n"
         <<"  \"controller\": "<<json(o.controller=="acc"?"esmini::ControllerACC::Step":
             "esmini::ControllerALKS_R157SM::ReferenceDriver AEB component")<<",\n"
         <<"  \"stop_on_collision\": "<<(o.stop_on_collision?"true":"false")<<",\n"
         <<"  \"detailed_logs\": "<<(o.detailed_logs?"true":"false")<<",\n"
         <<"  \"controller_kind\": "<<json(o.controller)<<",\n"
+        <<"  \"native_reference\": "<<(o.native_reference?"true":"false")<<",\n"
+        <<"  \"acc_observation_source\": "<<json(o.controller=="acc"?
+            (o.native_reference?"live native entities":"native-position copies in scenario order"):"not applicable")<<",\n"
         <<"  \"aeb_ttc_s\": "<<(o.controller=="aeb"?numeric(o.aeb_ttc_s):"null")<<",\n"
         <<"  \"aeb_max_deceleration_mps2\": "<<(o.controller=="aeb"?numeric(o.aeb_deceleration):"null")<<",\n"
         <<"  \"aeb_ramp_s\": "<<(o.controller=="aeb"?"0.6":"null")<<",\n"
@@ -169,25 +183,25 @@ void write_config(const Options& o,const PreparedScenario& scene,const AccConfig
         <<"  \"source_fnv1a64\": "<<json(fingerprint(scene.source))<<",\n"
         <<"  \"road_fnv1a64\": "<<json(fingerprint(scene.road))<<",\n"
         <<"  \"generated_scenario\": "<<json(scene.generated.string())<<",\n"
-        <<"  \"dt_s\": "<<o.dt<<",\n  \"sensor_period_s\": "<<o.sensor_period<<",\n"
+        <<"  \"dt_s\": "<<o.dt<<",\n  \"sensor_period_s\": "<<(o.controller=="acc"?"null":numeric(o.sensor_period))<<",\n"
         <<"  \"duration_s\": "<<o.duration<<",\n  \"dropout_probability\": "<<o.dropout_p<<",\n"
-        <<"  \"dropout_model\": "<<json(o.dropout_model)<<",\n"
-        <<"  \"mean_missing_s\": "<<(o.dropout_model=="markov"?numeric(o.mean_missing_s):"null")<<",\n"
+        <<"  \"dropout_model\": "<<json(o.controller=="acc"?"none":o.dropout_model)<<",\n"
+        <<"  \"mean_missing_s\": "<<(o.controller=="aeb" && o.dropout_model=="markov"?numeric(o.mean_missing_s):"null")<<",\n"
         <<"  \"markov_initialization\": "<<json(o.markov_init)<<",\n"
-        <<"  \"markov_alpha\": "<<(o.dropout_model=="markov"?numeric(transitions.enter_missing):"null")<<",\n"
-        <<"  \"markov_beta\": "<<(o.dropout_model=="markov"?numeric(transitions.recover):"null")<<",\n"
+        <<"  \"markov_alpha\": "<<(o.controller=="aeb" && o.dropout_model=="markov"?numeric(transitions.enter_missing):"null")<<",\n"
+        <<"  \"markov_beta\": "<<(o.controller=="aeb" && o.dropout_model=="markov"?numeric(transitions.recover):"null")<<",\n"
         <<"  \"seed\": "<<o.seed<<",\n  \"time_gap_s\": "<<acc.time_gap_s<<",\n"
         <<"  \"set_speed_mps\": "<<acc.set_speed_mps<<",\n  \"initial_ego_speed_mps\": "<<scene.reference.initial_speed()<<",\n"
         <<"  \"max_acceleration_mps2\": "<<acc.max_acceleration<<",\n  \"max_deceleration_mps2\": "<<acc.max_deceleration<<",\n"
-        <<"  \"sensor_fov_rad\": "<<pi/3<<",\n  \"sensor_far_m\": 60,\n"
+        <<"  \"sensor_fov_rad\": "<<(o.controller=="acc"?"null":numeric(pi/3))<<",\n  \"sensor_far_m\": "<<(o.controller=="acc"?"null":"60")<<",\n"
         <<"  \"ego_state_source\": \"exact simulation truth\",\n"
-        <<"  \"plant\": \"bounded constant-acceleration longitudinal kinematics\",\n"
-        <<"  \"lateral_driver\": \"ideal spatial-path following\",\n"
-        <<"  \"dropout_scope\": "<<json(o.dropout_model=="markov"?
+        <<"  \"plant\": "<<json(o.controller=="acc"?"native ACC override MoveAlongS":"bounded constant-acceleration longitudinal kinematics")<<",\n"
+        <<"  \"lateral_driver\": "<<json(o.controller=="acc"?"native OpenDRIVE movement":"ideal spatial-path following")<<",\n"
+        <<"  \"dropout_scope\": "<<json(o.controller=="acc"?"disabled; all non-ego targets at native controller phase":o.dropout_model=="markov"?
             "independent target chains; one transition per perception refresh, even outside sensor FOV":
             "one independent draw per detected object per perception frame")<<",\n"
         <<"  \"missing_policy\": "<<json(o.controller=="acc"?
-            "empty new frame; no tracker; ACC free-cruise behavior":
+            "not applicable; all targets supplied without filtering":
             "empty new frame; no tracker; no new AEB trigger while missing; active AEB continues until stop")<<",\n"
         <<"  \"evaluation\": "<<json(o.stop_on_collision?
             "truth-only upright oriented bounding boxes; stop at first contact":
@@ -336,33 +350,42 @@ int run(const Options& options) {
     auto scenario_id=options.source.stem().string();
     const std::string source_prefix="C_original_";
     if(scenario_id.rfind(source_prefix,0)==0) scenario_id.erase(0,source_prefix.size());
-    const auto scene=prepare_scenario(options.source,options.output/"generated"/("C_"+options.controller+"_"+scenario_id+".xosc"));
+    const bool native_acc=options.controller=="acc";
+    AccConfig acc_config; acc_config.time_gap_s=options.time_gap;
+    acc_config.set_speed_mps=options.set_speed; // -1 resolves to trajectory initial speed.
+    const auto scene=prepare_scenario(options.source,
+        options.output/"generated"/("C_"+options.controller+"_"+scenario_id+".xosc"),
+        "object_1",native_acc?&acc_config:nullptr,options.native_reference);
     const auto original_hash=fingerprint(scene.source),road_hash=fingerprint(scene.road);
     if(options.duration>scene.duration_s+1e-8) throw std::invalid_argument("duration exceeds original scenario stop time");
 
     // ACC settings; its acceleration limits also bound the AEB request in arbitrate().
-    AccConfig acc_config; acc_config.time_gap_s=options.time_gap;
     acc_config.set_speed_mps=options.set_speed<0 ? scene.reference.initial_speed():options.set_speed;
     acc_config.max_acceleration=scene.max_acceleration; acc_config.max_deceleration=scene.max_deceleration;
     write_config(options,scene,acc_config);
 
-    EsminiAdapter engine(scene,options.output,options.resources,SensorConfig{},options.dt);
-    EsminiAcc acc_controller(acc_config);
+    EsminiAdapter engine(scene,options.output,options.resources,SensorConfig{},options.dt,native_acc);
+
     std::unique_ptr<EsminiAeb> aeb_controller;
     if(options.controller=="aeb") aeb_controller=std::make_unique<EsminiAeb>(AebConfig{options.aeb_ttc_s,options.aeb_deceleration});
 
     DetectionDropout iid_dropout(options.dropout_p,options.seed);
     std::unique_ptr<MarkovDropout> markov_dropout;
-    if(options.dropout_model=="markov") {
+    if(!native_acc && options.dropout_model=="markov") {
         std::vector<int> ids;
         for(const auto& target:engine.truth().targets) ids.push_back(target.id); // Identity only; no target truth values enter uncertainty.
         markov_dropout=std::make_unique<MarkovDropout>(options.dropout_p,options.mean_missing_s,
             options.sensor_period,options.seed,ids,options.markov_init=="stationary");
     }
 
+    std::ofstream native_log;
+    if(native_acc) {
+        native_log=open(options.output/"native_acc.csv");
+        native_log<<"time_s,input_speed_mps,ego_speed_mps,ego_x_m,ego_y_m,ego_z_m,lead_id,target_count,observed_gap_m\n";
+    }
     auto logs=open_run_logs(options.output,options.detailed_logs);
     EgoMotion ego; ego.state=engine.truth().ego;
-    if(std::abs(ego.state.speed-scene.reference.initial_speed())>1e-6) throw std::runtime_error("Initial ego speed does not match trajectory-derived initial state");
+    if(!native_acc && std::abs(ego.state.speed-scene.reference.initial_speed())>1e-6) throw std::runtime_error("Initial ego speed does not match trajectory-derived initial state");
 
     const auto steps_per_sensor_frame=static_cast<std::uint64_t>(std::llround(options.sensor_period/options.dt));
     PerceptionFrame cached_observations; // Latest filtered frame; reused on steps without a sensor refresh.
@@ -405,6 +428,28 @@ int run(const Options& options) {
         if(world.time_s>=options.duration-1e-8) { write_terminal_result(); break; }
         if(engine.quit()) { end_reason="scenario_stop"; write_terminal_result(); break; }
 
+        if(native_acc) {
+            // Native actions, target sampling, ACC and ego motion all execute inside this step.
+            engine.advance_native(options.dt);
+            ACCSIM_PersistentAccOutput native{};
+            if(ACCSIM_GetPersistentAccOutput(&native)!=0) throw std::runtime_error("Missing native ACC diagnostics");
+            const auto next=engine.truth();
+            native_log<<native.time_s<<','<<native.input_speed_mps<<','<<next.ego.speed<<','
+                      <<next.ego.pose.x<<','<<next.ego.pose.y<<','<<next.ego.pose.z<<','
+                      <<native.lead_id<<','<<native.target_count<<','<<native.observed_gap_m<<'\n';
+            // results.csv records boundary truth; internal-phase control lives in native_acc.csv.
+            ego.progress_m=scene.reference.project(world.ego.pose).first;
+            write_result(logs.results,step,world,ego.progress_m,false,cached_observations,cached_counts,
+                         false,nullptr,nullptr,metrics);
+            const double acceleration=(native.desired_speed_mps-native.input_speed_mps)/options.dt;
+            if(acceleration<-.01 && summary.first_deceleration_s<0) summary.first_deceleration_s=native.time_s;
+            summary.minimum_acceleration_mps2=std::min(summary.minimum_acceleration_mps2,acceleration);
+            summary.close_gap_stop_requested=summary.close_gap_stop_requested ||
+                (native.lead_id>=0 && native.input_speed_mps>0 && native.desired_speed_mps==0);
+            ++step;
+            continue;
+        }
+
         // --- 2c. Sensor refresh and Markov/IID filtering (every sensor_period only) ---
         const bool is_sensor_frame=step%steps_per_sensor_frame==0;
         if(is_sensor_frame) {
@@ -431,7 +476,7 @@ int run(const Options& options) {
 
         // --- 2d. Controller: exact ego + cached observations -> request ---
         const ControllerInput input{world.time_s,options.dt,world.ego,cached_observations};
-        const auto request=aeb_controller?aeb_controller->update(input):acc_controller.update(input);
+        const auto request=aeb_controller->update(input);
         if(request.aeb_active && summary.first_aeb_s<0) summary.first_aeb_s=world.time_s;
 
         // --- 2e. Vehicle movement: actuator limits -> control log -> kinematics -> esmini ---
@@ -447,7 +492,7 @@ int run(const Options& options) {
 
     // ===== 3. Results ============================================================
     if(fingerprint(scene.source)!=original_hash || fingerprint(scene.road)!=road_hash) throw std::runtime_error("Original data changed during run");
-    write_summary(options.output,summary,markov_stats,markov_dropout!=nullptr,end_reason,end_time,ego.state.speed,options.sensor_period);
+    write_summary(options.output,summary,markov_stats,markov_dropout!=nullptr,end_reason,end_time,engine.truth().ego.speed,options.sensor_period);
     std::cout<<"Completed: "<<options.output<<"\ncollision="<<summary.collision<<", min_gap="<<summary.minimum_gap_m
              <<" m, min_TTC="<<summary.minimum_ttc_s<<" s, dropped="<<summary.dropped_detections<<'/'<<summary.raw_detections<<'\n';
     return 0;

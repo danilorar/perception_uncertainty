@@ -27,6 +27,28 @@ This page describes native `simulation/acc_cpp` outputs.
 
 Detailed logs are off by default. `run_comparison.py` and `run_markov_sensitivity.py` enable them explicitly for target-truth checks, `--validate` and replay; add `--detailed-logs true` to a single run that will be replayed.
 
+### Persistent ACC identity runs
+
+ACC currently bypasses the ideal sensor and uncertainty and lets native ACC move
+ego. `results.csv` records boundary truth with observation/control columns empty;
+`controller_updated=0` means no outer-loop control calculation, not that native ACC
+was inactive. Detailed `control.csv`, `perceptions.csv` and `dropout_states.csv`
+contain headers only. Use `native_acc.csv` for native controller diagnostics:
+
+- `time_s`: esmini clock at the internal ACC step, after scenario actions.
+- `input_speed_mps`: live ego speed immediately before ACC.
+- `ego_speed_mps`, `ego_x_m`, `ego_y_m`, `ego_z_m`: post-step ego state.
+- `lead_id`: selected target inferred from upstream ACC's lookahead marker; `-1`
+  means none. This is unambiguous for the supported two-vehicle scenarios.
+- `target_count`: number of non-ego objects supplied to ACC.
+- `observed_gap_m`: post-ACC free-space gap to the selected target, or infinity.
+  This diagnostic is not the internal road-distance gap used by ACC's main gate.
+
+Zero-time initialization is handled by esmini's normal controller lifecycle and
+is not included in `native_acc.csv`. Native ACC may apply its set-speed ceiling
+already during initialization. Sensor/dropout summary counts are zero because
+these identity runs do not sample the sensor. The AEB schema below is unchanged.
+
 ### 主结果 / Main results (`results.csv`)
 
 每个循环步一行，时间 `t_k = k·dt`：该时刻真值、当时可用的缓存观测，以及在 `t_k` 决定并作用于 `[t_k, t_k+dt)` 的指令。空单元表示该量不可用或非有限值，不表示零。

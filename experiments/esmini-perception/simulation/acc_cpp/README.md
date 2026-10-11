@@ -63,9 +63,27 @@ build/runner/acc_sim --controller aeb --scenario ../../Data/C_original_1549178.x
 
 Output directories must be new and empty. INI scenario paths are relative to the INI directory; CLI scenario paths are relative to the current directory. The two INIs differ only in loss probability, 0 / 0.1.
 
-ACC 调用原 `ControllerACC::Step()`，把速度请求换成加速度，再由共同车辆模型执行 ±10 m/s² 限幅和积分。小于 1 m 间隙的零速度请求也经过该模型，不瞬间停车。AEB 只调用 ReferenceDriver 的 AEB 组件，保留跨步状态，排除驾驶员反应和巡航。
+ACC keeps one upstream `ControllerACC` attached to the real ego in override mode.
+Immediately before each native step it receives copies of all non-ego targets in
+scenario order, including native road/lane position information. Targets with live
+relative-position links or relative position types are rejected: resolving those
+into independent snapshots is not supported yet. Native ACC and
+esmini own ego movement, including the immediate stop below a one-metre gap.
+The ACC path currently requires `--dropout-p 0`; sensor filtering and uncertainty
+are not connected yet. AEB retains its existing perception, stateful ReferenceDriver
+AEB component, arbitration and custom vehicle movement.
 
-ACC calls original `ControllerACC::Step()`, converts its speed request to acceleration, then applies the common vehicle model with ±10 m/s² limits and integration. Even a zero-speed request for gaps below 1 m passes through this model instead of stopping instantly. AEB calls only the ReferenceDriver AEB component, retains state, and excludes driver reaction and cruise.
+Run the native equivalence check from `acc_cpp/`:
+
+```bash
+python3 tools/compare_native_acc.py --output-dir results/native_acc_identity
+```
+
+This runs three scenarios with three timestep/settings combinations each. The
+reference uses the same native ACC lifecycle and live scenario entities, with
+read-only diagnostics; the other run substitutes native-position target copies.
+The check requires byte-identical ego truth, native diagnostics, results and
+summaries. `--native-reference true` selects the live-entity reference in `acc_sim`.
 
 ## 3. 配对对比 / Paired comparison
 
@@ -77,8 +95,8 @@ python3 tools/run_comparison.py --binary build/runner/acc_sim \
 # IID 基准 / IID baseline
 python3 tools/run_comparison.py --binary build/runner/acc_sim --dropout-model iid --seeds 42 --validate
 
-# 切换原生 ACC / Switch to native ACC
-python3 tools/run_comparison.py --binary build/runner/acc_sim --controller acc --time-gap 1.5 --seeds 42 --validate
+# Native ACC identity comparison (uncertainty is not connected yet)
+python3 tools/compare_native_acc.py --output-dir results/native_acc_identity
 ```
 
 每个 seed 跑 ideal/dropout 两组；`--validate` 另跑 p=0、相同 seed 重复、p=1，检查等价、复现、目标真值不变、完全删除观测。每步核对碰撞几何与引擎标志。普通批运行通过检查后可省略验证选项。
@@ -102,9 +120,9 @@ python3 tools/run_markov_sensitivity.py --binary build/runner/acc_sim \
   --duration 10 --markov-init stationary --validate
 ```
 
-默认各场景一个确定性 ideal、100 次 IID、三组各 100 次 Markov，共 1203 次主运行、36 次检查。若 ideal 提前碰撞，另跑完整时域目标真值参考，排除在安全统计外。`--scenarios` 可选一个或多个 XOSC。改为 `--controller acc` 可跑 ACC。
+默认各场景一个确定性 ideal、100 次 IID、三组各 100 次 Markov，共 1203 次主运行、36 次检查。若 ideal 提前碰撞，另跑完整时域目标真值参考，排除在安全统计外。`--scenarios` 可选一个或多个 XOSC。ACC 的不确定性连接尚未恢复。
 
-Each scenario has one deterministic ideal, 100 IID and three groups of 100 Markov runs: 1203 main runs and 36 checks. If ideal collides early, a full-horizon target-truth reference is excluded from safety statistics. `--scenarios` accepts one or more XOSCs. Use `--controller acc` for ACC.
+Each scenario has one deterministic ideal, 100 IID and three groups of 100 Markov runs: 1203 main runs and 36 checks. If ideal collides early, a full-horizon target-truth reference is excluded from safety statistics. `--scenarios` accepts one or more XOSCs. ACC uncertainty sweeps are currently unavailable.
 
 `results/latest_aeb_markov_sensitivity.txt` 或 `latest_acc_markov_sensitivity.txt` 指向新批次。旧 `latest_markov_sensitivity.txt` 是历史 ACC 指针。输出见 [字段](../../docs/output-schema.md)，统计解释见 [报告](reports/README.md)。
 

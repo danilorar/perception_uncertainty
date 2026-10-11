@@ -166,7 +166,7 @@ std::pair<double,double> ReferencePath::project(const Pose& pose) const {
 
 PreparedScenario prepare_scenario(const std::filesystem::path& source,
                                   const std::filesystem::path& generated,
-                                  const std::string& ego_name) {
+                                  const std::string& ego_name, const AccConfig* acc, bool native_reference) {
     PreparedScenario result;
     result.source=fs::canonical(source);
     result.generated=fs::weakly_canonical(fs::absolute(generated));
@@ -239,7 +239,18 @@ PreparedScenario prepare_scenario(const std::filesystem::path& source,
     auto controller=ego.append_child("ObjectController").append_child("Controller");
     controller.append_attribute("name")="NativeEsminiACC";
     auto controller_properties=controller.append_child("Properties");
-    property(controller_properties,"esminiController","ExternalController");
+    property(controller_properties,"esminiController",acc ?
+        (native_reference ? "ReferenceACC":"PerceptionACC") : "ExternalController");
+    if(acc) {
+        auto setting=[&](const char* name,double value) {
+            auto item=controller_properties.append_child("Property");
+            item.append_attribute("name")=name;
+            item.append_attribute("value").set_value(value,17);
+        };
+        setting("timeGap",acc->time_gap_s);
+        setting("setSpeed",acc->set_speed_mps<0 ? result.reference.initial_speed():acc->set_speed_mps);
+        setting("lateralDist",acc->lateral_distance_m);
+    }
     property(controller_properties,"mode","override");
     // Retain the original data author's FileHeader; ownership of adapter code
     // is declared in this source, not substituted into original data metadata.
