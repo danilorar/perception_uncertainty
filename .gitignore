@@ -1,12 +1,10 @@
+# Rules from .gitignore
 OpenScenarioDrive-Linux-x86_64.AppImage
-.venv 
+.venv
 .vscode
-
 # Python cache
 __pycache__/
 *.pyc
-
-
 # Ignore all files in the esmini-demo directory except results and scripts
 esmini-demo/*
 !esmini-demo/results/
@@ -14,3 +12,53 @@ esmini-demo/*
 !esmini-demo/scripts/
 !esmini-demo/scripts/**
 
+# Rules from experiments/.gitignore
+# 本机文件 / Local machine files
+/experiments/**/.DS_Store
+/experiments/**/__pycache__/
+/experiments/**/*.py[cod]
+/experiments/**/imgui.ini
+/experiments/**/replayer_log.txt
+
+# Rules from experiments/esmini-perception/.gitignore
+# Local operating-system/editor files and Python environments.
+/experiments/esmini-perception/**/.DS_Store
+/experiments/esmini-perception/**/__pycache__/
+/experiments/esmini-perception/**/*.py[cod]
+/experiments/esmini-perception/**/.venv/
+/experiments/esmini-perception/**/.vscode/
+# Download esmini separately; do not commit binaries or third-party source trees.
+/experiments/esmini-perception/simulation/esmini-demo/
+/experiments/esmini-perception/simulation/esmini/
+/experiments/esmini-perception/simulation/OSC-NCAP-scenarios-main/
+# Previous Vector/NCAP experiments are retained locally, outside this workflow.
+/experiments/esmini-perception/simulation/aeb/
+/experiments/esmini-perception/simulation/Run AEB comparison.command
+/experiments/esmini-perception/simulation/Run Vector CCRs 50kmh.command
+/experiments/esmini-perception/simulation/Run cut-in demo.command
+# 生成场景、结果与历史快照 / Generated scenarios, results and old snapshots
+/experiments/esmini-perception/simulation/generated/
+/experiments/esmini-perception/simulation/results/
+/experiments/esmini-perception/simulation/archive/
+/experiments/esmini-perception/results/
+/experiments/esmini-perception/**/*.log
+/experiments/esmini-perception/**/*.dat
+/experiments/esmini-perception/**/imgui.ini
+/experiments/esmini-perception/**/replayer_log.txt
+/experiments/esmini-perception/**/*.mp4
+/experiments/esmini-perception/**/*.gif
+# Course documents are not part of the simulation code/data repository.
+/experiments/esmini-perception/Files/
+/experiments/esmini-perception/Meeting Discussions with Supervisors/
+
+# Rules from experiments/esmini-perception/simulation/acc_cpp/.gitignore
+# Author: Zhuo Ma
+/experiments/esmini-perception/simulation/acc_cpp/**/build/
+/experiments/esmini-perception/simulation/acc_cpp/**/CMakeUserPresets.json
+/experiments/esmini-perception/simulation/acc_cpp/**/results/
+/experiments/esmini-perception/simulation/acc_cpp/**/__pycache__/
+/experiments/esmini-perception/simulation/acc_cpp/**/*.pyc
+/experiments/esmini-perception/simulation/acc_cpp/**/*.dSYM/
+/experiments/esmini-perception/simulation/acc_cpp/**/.DS_Store
+/experiments/esmini-perception/simulation/acc_cpp/**/imgui.ini
+/experiments/esmini-perception/simulation/acc_cpp/**/replayer_log.txt
