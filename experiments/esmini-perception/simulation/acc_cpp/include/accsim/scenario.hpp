@@ -22,5 +22,5 @@ struct PreparedScenario {
 PreparedScenario prepare_scenario(const std::filesystem::path& source,
                                   const std::filesystem::path& generated,
                                   const std::string& ego_name="object_1",
-                                  const AccConfig* acc=nullptr, bool native_reference=false);
+                                  const AccConfig& acc=AccConfig{1.5, -1}, bool native_reference=false);
 } // namespace accsim

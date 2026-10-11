@@ -1,8 +1,8 @@
 # 仿真实验 / Simulation experiments
 
-当前维护的实验是 [esmini 感知误差与原生 AEB/ACC](esmini-perception/README.md)。从该 README 开始安装、运行、回放及查看结果。
+当前维护的实验是 [esmini 原生 ACC](esmini-perception/simulation/acc_cpp/README.md)。从该 README 开始安装、运行及查看结果。
 
-The maintained experiment is [esmini perception errors with native AEB/ACC](esmini-perception/README.md). Start there for setup, execution, replay and results.
+The maintained experiment is [native esmini ACC](esmini-perception/simulation/acc_cpp/README.md). Start there for setup, notebook execution and results.
 
 `esmini-perception/simulation/acc_cpp/` 是当前 C++ 实验；其上层 Python 示例用于教学与历史对照。老师的 `HiDriveController` 尚未接入。
 

@@ -64,7 +64,7 @@ int main(int argc,char** argv) {
         require(serialize(target)==serialize(source_target),"target maneuver/trajectory changed");
         const auto controller=generated.select_node("//ScenarioObject[@name='object_1']/ObjectController/Controller").node();
         require(std::string(controller.attribute("name").value())=="NativeEsminiACC","wrong controller name");
-        require(std::string(controller.select_node("./Properties/Property[@name='esminiController']").node().attribute("value").value())=="ExternalController","wrong bridge controller type");
+        require(std::string(controller.select_node("./Properties/Property[@name='esminiController']").node().attribute("value").value())=="PerceptionACC","wrong bridge controller type");
         require(std::string(controller.select_node("./Properties/Property[@name='mode']").node().attribute("value").value())=="override","bridge is not in override mode");
         require(generated.select_nodes("//PrivateAction[LongitudinalAction and ControllerAction]").empty(),"malformed combined private action remains");
         const auto activation=generated.select_node("//Private[@entityRef='object_1']/PrivateAction/ControllerAction/ActivateControllerAction").node();

@@ -1,5 +1,4 @@
 // Author: Zhuo Ma
-#include "accsim/control.hpp"
 #include "accsim/metrics.hpp"
 #include "accsim/perception.hpp"
 #include <algorithm>
@@ -30,13 +29,6 @@ int main() {
         require(ordered.dropped_ids==reversed.dropped_ids,"Object iteration order cannot change dropout");
         bool rejected=false; try { accsim::DetectionDropout bad(-.1,0); } catch(const std::invalid_argument&) { rejected=true; }
         require(rejected,"Invalid dropout probability rejected");
-        accsim::ReferencePath path; path.vertices={{0,0,{}},{10,100,{100,0,0,0,0,0}}};
-        accsim::EgoMotion ego; ego.state.speed=1;
-        accsim::advance_vehicle(ego,{-10,false},.2,path);
-        near(ego.state.speed,0,"Plant does not reverse after stop"); near(ego.progress_m,.05,"Stop inside timestep integrated exactly");
-        accsim::ControlRequest stop; stop.acceleration_mps2=-1000;
-        const auto bounded=accsim::arbitrate(stop,accsim::AccConfig{});
-        near(bounded.acceleration_mps2,-10,"Instant stop request limited by shared plant"); require(bounded.limited,"Saturation logged");
         accsim::ObjectState host,target; host.box=target.box={5,1.8,1.6,0,0,.7};
         host.speed=10; target.speed=8; target.id=1; target.pose.x=25;
         auto geometry=accsim::geometry(host,target); near(geometry.gap_m,20,"True bumper gap");
@@ -46,7 +38,7 @@ int main() {
         target.pose.x=4.9; geometry=accsim::geometry(host,target); require(geometry.collision,"Overlapping truth boxes collide");
         target.pose.z=5; require(!accsim::geometry(host,target).collision,"Height-separated boxes do not collide");
         target.pose.z=0;target.pose.y=10; require(!accsim::geometry(host,target).in_path,"Lateral target excluded from rear-end TTC");
-        std::cout<<"Perception, plant and truth metrics checks passed\n";
+        std::cout<<"Perception and truth metrics checks passed\n";
         return 0;
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n';return 1; }
 }

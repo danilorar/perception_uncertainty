@@ -1,146 +1,151 @@
 // Author: Zhuo Ma
-// Golden numerical cases executed by the original esmini v3.8.1 ControllerACC.
-// Checks deliberately use exceptions instead of assert(), so Release builds
-// retain every check even if NDEBUG is set.
-#include "accsim/control.hpp"
+// Exercise the production persistent ACC through XOSC initialization and SE_StepDT.
+// Exceptions keep every check active in Release builds.
 #include "accsim/engine.hpp"
-#include <filesystem>
+#include "native_acc_bridge.h"
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
+constexpr double dt = 0.01;
 void require(bool condition, const std::string& message) {
-    if (!condition) throw std::runtime_error(message);
+    if (!condition) {
+        throw std::runtime_error(message);
+    }
 }
-void near(double actual, double expected, const std::string& message, double tolerance=1e-9) {
+void near(double actual, double expected, const std::string& message, double tolerance = 1e-8) {
     require(std::isfinite(actual) && std::abs(actual - expected) <= tolerance,
             message + ": expected " + std::to_string(expected) + ", got " + std::to_string(actual));
 }
-accsim::ControllerInput input_with_speed(double speed) {
-    accsim::ControllerInput input;
-    input.dt_s = 0.01;
-    input.ego.id = 1;
-    input.ego.pose = {-54.76,-10.17,.1,.145748,0,0};
-    input.ego.speed = speed;
-    input.ego.box.length = 5.0;
-    input.ego.box.width = 1.8;
-    input.ego.box.height = 1.6;
-    return input;
-}
-accsim::Observation target(double x, double speed, int id=2) {
-    accsim::Observation observation;
-    observation.track_id = id;
-    observation.pose = {-54.76+x*std::cos(.145748),-10.17+x*std::sin(.145748),.1,.145748,0,0};
-    observation.speed = speed;
-    observation.box.length = 5.0;
-    observation.box.width = 1.8;
-    observation.box.height = 1.6;
-    return observation;
-}
-} // namespace
+struct Target {
+    double distance;
+    double speed;
+    double lateral = 0;
+    double center = 0;
+    double heading = 0;
+};
 
-int main(int argc,char** argv) {
+// A straight road makes native longitudinal distance and movement independently
+// predictable. Targets use ordinary scenario motion; only ego has a controller.
+accsim::PreparedScenario fixture(const std::filesystem::path& directory, double speed,
+                                double set_speed, const std::vector<Target>& targets,
+                                double ego_center = 0) {
+    std::filesystem::create_directories(directory);
+    accsim::PreparedScenario scene;
+    scene.source = directory / "fixture.xosc";
+    scene.generated = scene.source;
+    scene.road = directory / "straight.xodr";
+    std::ofstream road(scene.road);
+    road << R"(<OpenDRIVE><header revMajor="1" revMinor="4" name="ACC test" version="1" date="" north="0" south="0" east="0" west="0"/>
+<road name="straight" length="1000" id="1" junction="-1"><planView><geometry s="0" x="0" y="0" hdg="0" length="1000"><line/></geometry></planView>
+<lanes><laneSection s="0"><center><lane id="0" type="none" level="false"/></center><right><lane id="-1" type="driving" level="false"><width sOffset="0" a="3.5" b="0" c="0" d="0"/></lane></right></laneSection></lanes></road></OpenDRIVE>)";
+    road.close();
+    std::ofstream file(scene.generated);
+    file << std::setprecision(17);
+    file << R"(<OpenSCENARIO><FileHeader revMajor="1" revMinor="1" date="2026-01-01T00:00:00" description="Persistent ACC tests" author="accsim"/>
+<ParameterDeclarations/><CatalogLocations/><RoadNetwork><LogicFile filepath="straight.xodr"/></RoadNetwork><Entities>)";
+    for (std::size_t i = 0; i <= targets.size(); ++i) {
+        const double center = i == 0 ? ego_center : targets[i - 1].center;
+        file << "<ScenarioObject name=\"object_" << i + 1 << "\"><Vehicle name=\"car\" vehicleCategory=\"car\">"
+             << "<BoundingBox><Center x=\"" << center << "\" y=\"0\" z=\"0\"/>"
+             << "<Dimensions width=\"1.8\" length=\"5\" height=\"1.6\"/></BoundingBox>"
+             << "<Performance maxSpeed=\"70\" maxAcceleration=\"10\" maxDeceleration=\"10\"/>"
+             << "<Axles><FrontAxle maxSteering=\"0.5\" wheelDiameter=\"0.6\" trackWidth=\"1.6\" positionX=\"2\" positionZ=\"0.3\"/>"
+             << "<RearAxle maxSteering=\"0\" wheelDiameter=\"0.6\" trackWidth=\"1.6\" positionX=\"0\" positionZ=\"0.3\"/></Axles><Properties/></Vehicle>";
+        if (i == 0) {
+            file << "<ObjectController><Controller name=\"testACC\"><Properties>"
+                 << "<Property name=\"esminiController\" value=\"PerceptionACC\"/>"
+                 << "<Property name=\"mode\" value=\"override\"/>"
+                 << "<Property name=\"timeGap\" value=\"1.5\"/>"
+                 << "<Property name=\"setSpeed\" value=\"" << set_speed << "\"/>"
+                 << "</Properties></Controller></ObjectController>";
+        }
+        file << "</ScenarioObject>";
+    }
+    file << "</Entities><Storyboard><Init><Actions>";
+    for (std::size_t i = 0; i <= targets.size(); ++i) {
+        const Target target = i == 0 ? Target{0, speed} : targets[i - 1];
+        file << "<Private entityRef=\"object_" << i + 1 << "\">"
+             << "<PrivateAction><TeleportAction><Position><WorldPosition x=\"" << 100 + target.distance
+             << "\" y=\"" << -1.75 + target.lateral << "\" z=\"0\" h=\"" << target.heading
+             << "\"/></Position></TeleportAction></PrivateAction>"
+             << "<PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape=\"step\" value=\"0\" dynamicsDimension=\"time\"/>"
+             << "<SpeedActionTarget><AbsoluteTargetSpeed value=\"" << target.speed
+             << "\"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction>";
+        if (i == 0) {
+            file << "<PrivateAction><ControllerAction><ActivateControllerAction longitudinal=\"true\" lateral=\"false\"/>"
+                 << "</ControllerAction></PrivateAction>";
+        }
+        file << "</Private>";
+    }
+    file << "</Actions></Init><StopTrigger/></Storyboard></OpenSCENARIO>";
+    return scene;
+}
+
+ACCSIM_PersistentAccOutput advance(accsim::EsminiAdapter& engine) {
+    const auto before = engine.truth();
+    engine.advance_native(dt);
+    ACCSIM_PersistentAccOutput output{};
+    require(ACCSIM_GetPersistentAccOutput(&output) == 0, "Persistent diagnostics available");
+    const auto after = engine.truth();
+    near(output.input_speed_mps, before.ego.speed, "Real ego feedback");
+    near(after.ego.speed, output.desired_speed_mps, "Native speed applied to real ego");
+    near(after.ego.pose.x - before.ego.pose.x, after.ego.speed * dt, "Native road movement");
+    near(after.ego.pose.y, before.ego.pose.y, "Native lane position retained");
+    near(after.time_s - before.time_s, dt, "Exactly one simulation timestep");
+    return output;
+}
+}
+
+int main(int argc, char** argv) {
     try {
-        if(argc!=3) throw std::invalid_argument("acc_tests ORIGINAL_SCENARIO TEMP_DIRECTORY");
-        const std::filesystem::path output=argv[2];
-        std::filesystem::create_directories(output);
-        const auto scene=accsim::prepare_scenario(argv[1],output/"generated.xosc");
-        accsim::EsminiAdapter engine(scene,output,{},accsim::SensorConfig{},.01);
-        accsim::AccConfig config;
-        config.set_speed_mps = 20.0;
-        accsim::EsminiAcc controller(config);
-        auto input = input_with_speed(10.0);
+        require(argc == 2, "acc_tests TEMP_DIRECTORY");
+        const auto root = std::filesystem::absolute(argv[1]);
+        int index = 0;
+        const auto check = [&](double speed, double set_speed, const std::vector<Target>& targets,
+                               int lead, double expected_speed, double center = 0) {
+            const auto directory = root / std::to_string(index++);
+            const auto scene = fixture(directory, speed, set_speed, targets, center);
+            accsim::EsminiAdapter engine(scene, directory, {}, dt);
+            const auto output = advance(engine);
+            require(output.target_count == static_cast<int>(targets.size()), "Every non-ego target copied");
+            require(output.lead_id == lead, "Expected native target selection");
+            near(output.desired_speed_mps, expected_speed, "Native speed calculation");
+            return output;
+        };
+        // IDs follow entity order: ego=0, targets=1,2,... .
+        // A rear target is in the copied view but must not affect cruise.
+        check(10, 20, {{-25, 0}}, -1, 10.07);
+        // Ordinary targets advance before ACC: use the gap at controller time.
+        check(10, 15, {{25, 8}}, 1, 10 - dt * .9022222222222222);
+        check(10, 10, {{14, 10}}, 1, 10 - dt * 1.2361111111111112);
+        check(10, 10, {{5.5, 0}}, 1, 0); // Immediate native stop, with no custom actuator clamp.
+        check(10, 20, {{45, 10}, {25, 10}}, 2, 10 + dt * 1.4583333333333333);
+        check(10, 20, {{25, 10}, {45, 10}}, 1, 10 + dt * 1.4583333333333333);
+        check(10, 20, {{25, 0, 10}}, -1, 10.07);
+        check(10, 20, {{200, 0}}, -1, 10.07); // Beyond native lookahead.
+        check(10, 10.001, {{45, 10}}, 1, 10.001);
+        check(30, 30, {{8, 0}}, 1, 29.9);
+        check(0, 0, {{-25, 0}}, -1, 0);
+        // Offset/heading cases retain native bounding-box branches.
+        check(10, 15, {{25, 8, 0, .5}}, 1, 10 - dt * 1.166111111111111, 1);
+        check(10, 15, {{25, 8, 0, .5, accsim::pi}}, 1, 10 - dt * 1.7783333333333333, 1);
 
-        auto request = controller.update(input);
-        near(request.acceleration_mps2, 7.0, "Free-road acceleration uses 0.7*max_acceleration");
-        near(request.desired_speed_mps, 10.07, "Free-road next speed");
-        require(request.lead_id == -1, "Empty observation list has no lead");
-
-        // Exact upstream weighted relative-distance / relative-speed case.
-        config.set_speed_mps = 15.0;
-        accsim::EsminiAcc weighted(config);
-        input.perception.objects = {target(25.0, 8.0)}; // bumper gap20, desiredgap18
-        request = weighted.update(input);
-        near(request.observed_gap_m, 20.0, "Bumper gap from two 5m vehicles");
-        near(request.acceleration_mps2, -17.0 / 18.0, "Weighted upstream ACC formula");
-        require(request.lead_id == 2, "Detected target selected");
-
-        // A zero lower clamp on the distance factor would produce zero here.
-        config.set_speed_mps = 10.0;
-        accsim::EsminiAcc negative_factor(config);
-        input.perception.objects = {target(14.0, 10.0)}; // gap9, desiredgap18, factor-.5
-        near(negative_factor.update(input).acceleration_mps2, -1.25,
-             "Negative distance factor must remain negative");
-
-        input.perception.objects = {target(5.5, 0.0)};
-        request = negative_factor.update(input);
-        require(request.close_gap_stop, "Sub-metre gap requests upstream immediate stop");
-        near(request.desired_speed_mps, 0.0, "Sub-metre desired speed");
-        near(request.acceleration_mps2, -1000.0, "Stop request is exposed for separate actuator limiting");
-
-        // Truth can contain a close obstacle, but it is not a controller input.
-        accsim::WorldTruthFrame truth;
-        truth.ego = input.ego;
-        accsim::ObjectState real_target;
-        real_target.id = 2;
-        real_target.pose.x = 5.5;
-        truth.targets.push_back(real_target);
-        input.perception.objects.clear();
-        require(!truth.targets.empty(), "Fixture contains an unobserved obstacle");
-        request = controller.update(input);
-        near(request.acceleration_mps2, 7.0, "Missed target cannot influence control through truth");
-        require(request.lead_id == -1, "No truth target is selected through an empty perception");
-
-        input.perception.objects = {target(45.0, 10.0, 3), target(25.0, 10.0, 2)};
-        require(controller.update(input).lead_id == 2, "Nearest front target selected");
-        input.perception.objects = {target(25.0, 10.0, 2), target(45.0, 10.0, 3)};
-        require(controller.update(input).lead_id == 2, "Nearest front target independent of ordinary list order");
-
-        input.ego.box.cx = 1.0;
-        input.perception.objects = {target(25.0, 10.0)};
-        input.perception.objects.front().box.cx = 0.5;
-        near(controller.update(input).observed_gap_m, 19.5, "Bounding-box reference offsets retained");
-        input.perception.objects.front().pose.h = .145748+accsim::pi;
-        near(controller.update(input).observed_gap_m, 18.5, "Opposite-heading box offset branch retained");
-        input = input_with_speed(10.0);
-
-        auto sideways = target(25.0, 0.0);
-        sideways.pose.y += 10.0;
-        input.perception.objects = {sideways};
-        require(controller.update(input).lead_id == -1, "Outside lateral gate excluded");
-        input.perception.objects = {target(-25.0, 0.0)};
-        require(controller.update(input).lead_id == -1, "Target behind ego excluded");
-
-        // Far lead would accelerate, but the set-speed ceiling takes priority.
-        config.set_speed_mps = 10.001;
-        accsim::EsminiAcc speed_ceiling(config);
-        input.perception.objects = {target(45.0, 10.0)};
-        request = speed_ceiling.update(input);
-        near(request.desired_speed_mps, 10.001, "Following-mode set-speed ceiling");
-        near(request.acceleration_mps2, 0.1, "Acceleration reflects the clipped requested speed");
-
-        // Severe close-speed mismatch, above the special one-metre branch.
-        input = input_with_speed(30.0);
-        input.perception.objects = {target(8.0, 0.0)};
-        config.set_speed_mps = 30.0;
-        accsim::EsminiAcc deceleration_bound(config);
-        request = deceleration_bound.update(input);
-        near(request.acceleration_mps2, -10.0, "Normal ACC deceleration is bounded");
-        require(request.desired_speed_mps >= 0.0, "Desired speed is nonnegative");
-
-        input = input_with_speed(0.0);
-        config.set_speed_mps = 0.0;
-        accsim::EsminiAcc stopped(config);
-        near(stopped.update(input).desired_speed_mps, 0.0, "Stopped cruise stays stopped");
-
-        input.dt_s = 0.0;
-        bool rejected = false;
-        try { stopped.update(input); } catch (const std::invalid_argument&) { rejected = true; }
-        require(rejected, "Zero controller timestep rejected");
-
-        std::cout << "ACC golden cases passed\n";
+        // Several consecutive steps detect accidental controller reconstruction:
+        // cruise must keep its original set speed, not reset it to each ego speed.
+        const auto directory = root / "persistent";
+        const auto scene = fixture(directory, 10, 20, {{-25, 0}});
+        accsim::EsminiAdapter engine(scene, directory, {}, dt);
+        for (int step = 1; step <= 20; ++step) {
+            near(advance(engine).desired_speed_mps, 10 + step * .07, "Cruise state persists across steps");
+        }
+        std::cout << "Persistent ACC cruise, following, selection, limits, stopping and movement checks passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "ACC test failed: " << error.what() << '\n';

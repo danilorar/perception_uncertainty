@@ -64,6 +64,14 @@ Geometry geometry(const ObjectState& ego,const ObjectState& target) {
     g.distance_m=std::hypot(xy_distance,z_gap);
     return g;
 }
+
+/*
+Evaluates actual world states:
+* collision: whether the ego vehicle collides with any target
+* minimum_distance_m: the minimum distance between the ego vehicle and any target
+* gap_m: the minimum gap between the ego vehicle and any target in the path
+* ttc_s: the minimum time to collision with any target in the path
+*/
 StepMetrics evaluate_truth(const WorldTruthFrame& truth) {
     StepMetrics metrics;
     for(const auto& target:truth.targets) {

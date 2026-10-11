@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build pinned esmini + the original C++ ACC/AEB + the experiment runner.
+"""Build pinned esmini + the original C++ ACC + the experiment runner.
 
 Author: Zhuo Ma
 Python orchestrates compilation only. The complete simulation loop is C++.
-The upstream ACC and R157 AEB files are verified byte-for-byte against the pinned commit.
+The upstream ACC files are verified byte-for-byte against the pinned commit.
 """
 import argparse
 import hashlib
@@ -54,7 +54,7 @@ def cmake_path(explicit):
 def verify_controllers(source):
     """Only the CMake download guard is patched; ACC implementation is intact."""
     hashes = {}
-    for name in ("ControllerACC.cpp", "ControllerACC.hpp", "ControllerALKS_R157SM.cpp", "ControllerALKS_R157SM.hpp"):
+    for name in ("ControllerACC.cpp", "ControllerACC.hpp"):
         relative = "EnvironmentSimulator/Modules/Controllers/" + name
         original = output(["git", "show", COMMIT + ":" + relative], source)
         if (source / relative).read_bytes() != original:
@@ -77,6 +77,35 @@ def patch_build_guard(source):
         raise RuntimeError("Unexpected upstream CMake layout; do not patch another version.")
 
 
+def prepare_viewer(cmake, source, build):
+    """Fetch graphics and vehicle assets using pinned upstream definitions."""
+    platform = "APPLE" if sys.platform == "darwin" else "MSVC" if os.name == "nt" else "LINUX"
+    script = build / "download-viewer.cmake"
+    script.write_text(
+        'set(CMAKE_SOURCE_DIR "' + source.as_posix() + '")\n'
+        'set(' + platform + ' TRUE)\n'
+        'include("${CMAKE_SOURCE_DIR}/support/cmake/common/locations.cmake")\n'
+        'set_project_external_paths()\nset_project_os_specific_paths()\n'
+        'include("${CMAKE_SOURCE_DIR}/support/cmake/cloud/set_cloud_links.cmake")\n'
+        'set_cloud_links()\n'
+        'include("${CMAKE_SOURCE_DIR}/support/cmake/cloud/download.cmake")\n'
+        'file(MAKE_DIRECTORY "${EXTERNALS_OSG_PATH}")\n'
+        'download(osg "${EXTERNALS_OSG_PATH}" "${EXTERNALS_OSG_OS_SPECIFIC_PATH}" "*" "${OSG_PACKAGE_URL}")\n'
+        'if(NOT EXISTS "${EXTERNALS_OSG_OS_SPECIFIC_PATH}/include/osg/Node")\n'
+        '  message(FATAL_ERROR "OSG download/extraction failed; see dependency download logs")\n'
+        'endif()\n'
+        'set(RESOURCES_PATH "' + (build / 'engine-home/resources').as_posix() + '")\n'
+        'file(MAKE_DIRECTORY "${RESOURCES_PATH}")\n'
+        'download(models "${RESOURCES_PATH}" "${RESOURCES_PATH}/models" "models" "${MODELS_PACKAGE_URL}")\n'
+        'if(NOT EXISTS "${RESOURCES_PATH}/models/car_white.osgb" OR NOT EXISTS "${RESOURCES_PATH}/models/car_red.osgb")\n'
+        '  message(FATAL_ERROR "Vehicle model download/extraction failed")\n'
+        'endif()\n',
+        encoding="utf-8")
+    command([cmake, "-P", script], cwd=build)
+    (build / "engine-home/resources/model_ids.txt").write_bytes(
+        output(["git", "show", COMMIT + ":resources/model_ids.txt"], source))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build")
@@ -85,6 +114,7 @@ def main():
     parser.add_argument("--cmake", help="Explicit CMake executable")
     parser.add_argument("--jobs", type=int, default=min(6, os.cpu_count() or 2))
     parser.add_argument("--skip-tests", action="store_true")
+    parser.add_argument("--viewer", action="store_true", help="Build graphics support (downloads OSG; requires platform graphics development libraries)")
     args = parser.parse_args()
     cmake = cmake_path(args.cmake)
     build = args.build_dir.resolve()
@@ -102,8 +132,11 @@ def main():
         command(["git", "submodule", "update", "--init", "--depth", "1", "externals/fmt"], source)
     controller_hashes = verify_controllers(source)
     patch_build_guard(source)
+    if args.viewer:
+        prepare_viewer(cmake, source, build)
     engine_build = build / "engine"
-    flags = ["-DUSE_" + name + "=OFF" for name in ("OSG", "OSI", "SUMO", "GTEST", "IMPLOT", "PROJ")]
+    flags = ["-DUSE_" + name + "=OFF" for name in ("OSI", "SUMO", "GTEST", "IMPLOT", "PROJ")]
+    flags.append("-DUSE_OSG=" + ("ON" if args.viewer else "OFF"))
     command([cmake, "-S", source, "-B", engine_build, "-DCMAKE_BUILD_TYPE=Release", *flags,
              "-DDOWNLOAD_EXTERNALS=OFF", "-DBUILD_EXAMPLES=OFF", "-DBUILD_REPLAYER=OFF", "-DBUILD_ODRPLOT=OFF",
              "-DENABLE_INCLUDE_WHAT_YOU_USE=OFF", "-DCMAKE_VERBOSE_MAKEFILE=OFF",
@@ -126,9 +159,9 @@ def main():
     shutil.copy2(source / "EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp", header / "esminiLib.hpp")
     (home / "version.txt").write_text('ESMINI_GIT_TAG="v3.8.1"\nESMINI_GIT_REV="' + COMMIT + '"\n', encoding="utf-8")
     manifest = {"commit": COMMIT, "controller_source_unchanged": True, "controller_sha256": controller_hashes,
-                "abi_version": 2, "controllers": ["acc", "aeb"],
+                "abi_version": 4, "controllers": ["acc"], "viewer_enabled": args.viewer,
                 "bridge_sha256": {name: hashlib.sha256((ROOT / "src" / name).read_bytes()).hexdigest()
-                                  for name in ("native_acc_bridge.cpp", "native_aeb_bridge.cpp")}}
+                                  for name in ("controllers/acc.cpp",)}}
     (home / "accsim_bridge.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     runner = build / "runner"
     configure = [cmake, "-S", ROOT, "-B", runner, "-DCMAKE_BUILD_TYPE=Release", "-DESMINI_HOME=" + str(home)]

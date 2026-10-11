@@ -20,27 +20,12 @@ Selected policy: retain reports and summary CSVs, ignore bulk raw results. Run G
 
 The native build (`build_native.py`) downloads and builds its own pinned
 esmini dependency. No root esmini submodule is required.
-GUI replay requires a separate graphics-enabled esmini v3.8.1 installation,
-provided through `--esmini-home`.
+The current ACC build is headless. The old perception replay tool is retired;
+`--esmini-home` in the runner supplies optional resources only.
 
-## 导出新结果 / Export new results
+## 历史报告 / Historical reports
 
-```bash
-# 从 acc_cpp/ 运行 / Run from acc_cpp/
-task_batch="$(cat results/latest.txt)"
-python3 tools/export_report.py --batch-dir "$task_batch" --name aeb_comparison_my_run
-
-task_sensitivity="$(cat results/latest_aeb_markov_sensitivity.txt)"
-python3 tools/export_report.py --batch-dir "$task_sensitivity" --name aeb_sensitivity_my_run
-```
-
-输出到 `reports/<name>/`，拒绝覆盖已有目录。仅导出白名单内 comparison/sensitivity CSV 和 batch/experiment manifest；配对比较另保存完整单次配置为 `run_configs.json`。自动生成双语 README 与 `export_manifest.json`。`sensitivity_runs.csv` 是每个 seed 的一行指标，不是逐帧数据。
-
-Output goes to `reports/<name>/` and existing directories are never overwritten. Only whitelisted comparison/sensitivity CSVs and batch/experiment manifests are exported; paired comparisons also retain full per-run settings in `run_configs.json`. A bilingual README and `export_manifest.json` are generated. `sensitivity_runs.csv` has one metrics row per seed rather than frame data.
-
-数字单元格和哈希不变，本机绝对路径改成 `source_batch/...` 或 `esmini-perception/...`。manifest 记录原文件 SHA256 和转换后 SHA256。原始日志仍在本机；这些相对引用不表示逐帧数据已经随报告发布。导出后更新 [报告索引](../simulation/acc_cpp/reports/README.md)，并写明控制器、参数及结论。
-
-Numeric cells and hashes stay unchanged; local absolute paths become `source_batch/...` or `esmini-perception/...`. The manifest records original and transformed file SHA256 values. Raw logs stay local; relative references do not mean frame data is published. Update the [report index](../simulation/acc_cpp/reports/README.md) after export, identifying controller, settings and conclusions.
+Existing reports, exported summaries and provenance are preserved in `simulation/acc_cpp/reports/`. The old batch runners, perception replay and batch exporter have been retired; their historical commands are not supported by the current ACC-only workflow. Current runs use the notebook, and native validation uses `compare_native_acc.py`. No replacement exporter is added in this cleanup.
 
 ## 检查后由自己提交 / Review and submit yourself
 
@@ -57,9 +42,9 @@ git diff --cached --name-only
 git diff --cached --stat
 ```
 
-检查暂存清单包含新的 AEB 桥接、测试、工具和 reports，且没有 build/results、dylib/DLL、DAT、缓存。`git diff` 不显示未跟踪文件内容，所以暂存后必须再核对清单。仓库根目录的 `.gitmodules` 和 `esmini/` 已有独立未提交变化，以上限定路径不会暂存它们。
+检查暂存清单包含所需 ACC 源码、测试、工具和文档，且没有 build/results、dylib/DLL、DAT、缓存。`git diff` 不显示未跟踪文件内容，所以暂存后必须再核对清单。仓库根目录的 `.gitmodules` 和 `esmini/` 已有独立未提交变化，以上限定路径不会暂存它们。
 
-Confirm staging includes new AEB bridges, tests, tools and reports, without build/results, dylib/DLL, DAT or caches. `git diff` omits untracked contents, so inspect the staged list. Existing separate changes in root `.gitmodules` and `esmini/` are excluded by the scoped staging command.
+Confirm staging includes the intended ACC source, tests, tools and documentation, without build/results, dylib/DLL, DAT or caches. `git diff` omits untracked contents, so inspect the staged list. Existing separate changes in root `.gitmodules` and `esmini/` are excluded by the scoped staging command.
 
 ```bash
 # 确认清单和目标分支后自行执行 / Execute after checking the list and target branch

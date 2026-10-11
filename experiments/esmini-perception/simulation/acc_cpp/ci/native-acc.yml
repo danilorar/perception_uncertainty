@@ -1,7 +1,7 @@
 # Author: Zhuo Ma
 # 启用时复制到仓库根目录 / Copy to repository root to enable:
 # .github/workflows/native-acc.yml
-name: Native esmini AEB / ACC
+name: Native esmini ACC
 on: [push, pull_request, workflow_dispatch]
 jobs:
   simulate:
@@ -21,9 +21,9 @@ jobs:
       - run: python -m pip install cmake==3.31.6
       - run: python tools/build_native.py --jobs 2
       - if: runner.os != 'Windows'
-        run: python tools/run_comparison.py --binary build/runner/acc_sim --seeds 42 --validate
+        run: python tools/compare_native_acc.py --binary build/runner/acc_sim --output-dir results/native_acc_identity
       - if: runner.os == 'Windows'
-        run: python tools/run_comparison.py --binary build/runner/Release/acc_sim.exe --seeds 42 --validate
+        run: python tools/compare_native_acc.py --binary build/runner/Release/acc_sim.exe --output-dir results/native_acc_identity
       - uses: actions/upload-artifact@v4
         if: always()
         with:

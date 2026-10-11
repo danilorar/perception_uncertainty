@@ -2,9 +2,11 @@
 
 作者 / Author: Zhuo Ma
 
-状态：尚未收到老师 `.cpp/.hpp`，没有 HiDrive 实现、注册或运行验证。当前 `acc_sim` 只支持 `aeb|acc`。本页是收到源码后的步骤，不能作为 HiDrive 已完成的证据。
+Historical integration proposal: the current runner is ACC-only. The old request/custom-vehicle interfaces described below have been retired. Future native integrations should use their own controller source alongside `src/controllers/acc.cpp`, reusing scenario, engine, logging and metrics code.
 
-Status: the teacher's `.cpp/.hpp` has not been received. There is no HiDrive implementation, registration or runtime validation. `acc_sim` currently supports only `aeb|acc`. These are steps for future integration, not evidence of a completed controller.
+状态：尚未收到老师 `.cpp/.hpp`，没有 HiDrive 实现、注册或运行验证。当前 `acc_sim` 只支持 ACC。本页是收到源码后的步骤，不能作为 HiDrive 已完成的证据。
+
+Status: the teacher's `.cpp/.hpp` has not been received. There is no HiDrive implementation, registration or runtime validation. `acc_sim` currently supports ACC only. These are steps for future integration, not evidence of a completed controller.
 
 ## 1. 确认原接口 / Establish the original interface
 

@@ -18,7 +18,7 @@ def compare(binary, scenario, directory, dt, time_gap, set_speed):
         folder = directory / name
         command = [str(binary), "--scenario", str(scenario), "--output-dir", str(folder),
                    "--controller", "acc", "--dropout-p", "0", "--dt", str(dt),
-                   "--sensor-period", str(dt), "--time-gap", str(time_gap),
+                   "--time-gap", str(time_gap),
                    "--stop-on-collision", "false", "--detailed-logs", "true",
                    "--native-reference", str(reference).lower()]
         if set_speed is not None:

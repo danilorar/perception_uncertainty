@@ -20,7 +20,8 @@ struct ObjectState {
     Vector3 velocity,acceleration;
 };
 struct WorldTruthFrame { double time_s=0; ObjectState ego; std::vector<ObjectState> targets; };
-// This separate type is the only external-object state accepted by controllers.
+// Independent observation values for shared perception processing.
+// Current native ACC uses native-position snapshots inside its integration.
 struct Observation {
     int track_id=-1, object_type=0, object_category=0;
     Pose pose;
@@ -40,23 +41,6 @@ struct SensorConfig {
     int capacity=64;
 };
 struct AccConfig { double time_gap_s=1.5, set_speed_mps=0, lateral_distance_m=5, max_acceleration=10, max_deceleration=10; };
-// Defaults come from esmini v3.8.1 ReferenceDriver::AEB, not ACC timeGap.
-struct AebConfig { double ttc_s=1.5,max_deceleration_mps2=.85*9.81; };
-struct ControllerInput {
-    double time_s=0, dt_s=0.01;
-    ObjectState ego;
-    PerceptionFrame perception;
-};
-struct ControlRequest {
-    double acceleration_mps2=0, desired_speed_mps=0;
-    int lead_id=-1;
-    double observed_gap_m=infinity;
-    bool close_gap_stop=false;
-    bool aeb_active=false;
-    double observed_ttc_s=infinity;
-};
-struct AppliedCommand { double acceleration_mps2=0; bool limited=false; };
-struct EgoMotion { ObjectState state; double progress_m=0; };
 struct Geometry {
     double gap_m=infinity, closing_speed_mps=0, lateral_m=0, longitudinal_m=0;
     double distance_m=infinity;
@@ -72,8 +56,6 @@ struct RunSummary {
     double first_collision_s=-1, collision_ego_speed_mps=-1, collision_relative_speed_mps=-1;
     double minimum_distance_m=infinity, minimum_gap_m=infinity, minimum_ttc_s=infinity;
     double first_deceleration_s=-1, minimum_acceleration_mps2=0;
-    double first_aeb_s=-1;
-    std::uint64_t sensor_frames=0, raw_detections=0, dropped_detections=0;
-    std::uint64_t longest_missing_frames=0;
+
 };
 } // namespace accsim
