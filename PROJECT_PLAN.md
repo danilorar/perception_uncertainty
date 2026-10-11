@@ -83,12 +83,12 @@ python3 tools/run_comparison.py --binary build/runner/acc_sim \
 
 Expected for seed 10: ideal has no collision; Markov collides at about 4.57 s with 33/92 detections dropped. These numbers match `reports/aeb_demo_1549178_seed10_20261008/comparison.csv` up to the last 1–2 digits.
 
-**Replay with the viewer** needs a graphics-enabled esmini v3.8.1 with `bin/libesminiLib.*` and `resources/`. The repository-root `esmini/` submodule is source only and not built. Options:
+Replay requires a separate graphics-enabled esmini v3.8.1 installation.
+Pass its location using `--esmini-home /path/to/esmini`.
+The native build downloads its own pinned esmini source and requires no
+root submodule. Its `build/engine-home` installation has no viewer.
 
-- Build it with the viewer (`USE_OSG=ON`).
-- Or download the v3.8.1 release package and pass `--esmini-home /path/to/it`.
-
-`build/engine-home` has no viewer and can't be used for replay. Single `acc_sim` runs need `--detailed-logs true` to be replayable.
+Single `acc_sim` runs need `--detailed-logs true` to be replayable.
 
 ## Validation recipe (for behavior-preserving changes)
 

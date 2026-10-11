@@ -18,9 +18,10 @@ Selected policy: retain reports and summary CSVs, ignore bulk raw results. Run G
 | `simulation/acc_cpp/results/` | 忽略，本机保留 / Ignore, retain locally | 逐帧 CSV、DAT、日志、图像和视频 / Frame CSVs, DAT, logs, images, videos |
 | 下载的引擎、虚拟环境、缓存、GUI 日志 / Downloads, environments, caches, GUI logs | 忽略 / Ignore | 本机产物 / Local products |
 
-原生 `build_native.py` 自行下载依赖，不要求根目录 `esmini/` 子模块已初始化。GUI 回放另需完整图形版安装。根目录 `esmini/` 是独立子模块，不能用普通文件方式随 experiments 提交。
-
-Native `build_native.py` fetches dependencies independently and does not require an initialized root `esmini/` submodule. GUI replay needs a separate complete graphical installation. Root `esmini/` is a separate submodule and is not submitted as ordinary experiment files.
+The native build (`build_native.py`) downloads and builds its own pinned
+esmini dependency. No root esmini submodule is required.
+GUI replay requires a separate graphics-enabled esmini v3.8.1 installation,
+provided through `--esmini-home`.
 
 ## 导出新结果 / Export new results
 
