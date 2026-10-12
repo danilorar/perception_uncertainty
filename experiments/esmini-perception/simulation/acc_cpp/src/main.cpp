@@ -544,7 +544,6 @@ int run(const Options& options) {
 
     // Open results.csv and, when requested, the detailed audit CSVs.
     auto logs = open_run_logs(options.output, options.detailed_logs);
-    double ego_progress_m = 0;
     RunSummary summary;
     std::uint64_t step = 0;
     double end_time = 0;
@@ -557,6 +556,8 @@ int run(const Options& options) {
         // --- 2a. World truth: exact ego feedback, truth/metrics logs, collision check ---
         // Snapshot the actual world at the start of this iteration, before advancement.
         const auto world = engine.truth();
+        // Measure current progress before any terminal row can be written.
+        const double ego_progress_m = scene.reference.project(world.ego.pose).first;
         end_time = world.time_s;
         if (std::abs(world.time_s - static_cast<double>(step) * options.dt) > 1e-7) {
             throw std::runtime_error("Simulation clock lost synchronization");
@@ -656,8 +657,6 @@ int run(const Options& options) {
 
         // Save the PRE-step world snapshot to results.csv. The post-step state and
         // internal controller diagnostics above belong to native_acc.csv.
-        // Projecting onto the reference path measures progress; it does not move ego.
-        ego_progress_m = scene.reference.project(world.ego.pose).first;
         write_result(logs.results, step, world, ego_progress_m, metrics);
 
         // Derive acceleration for reporting only; native ACC has already moved ego.
