@@ -137,6 +137,64 @@ int main(int argc, char** argv) {
         check(10, 15, {{25, 8, 0, .5}}, 1, 10 - dt * 1.166111111111111, 1);
         check(10, 15, {{25, 8, 0, .5, accsim::pi}}, 1, 10 - dt * 1.7783333333333333, 1);
 
+        // The native sensor filters targets before they reach ACC. Entity order is retained.
+        const auto sensor_check = [&](const std::string& name, const std::vector<Target>& targets,
+                                      const std::vector<int>& expected_ids, int lead) {
+            const auto directory = root / name;
+            const auto scene = fixture(directory, 10, 20, targets);
+            const ACCSIM_SensorConfig sensor{1, 0, 0, .5, 0, 2, 60, accsim::pi / 3};
+            accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor);
+            const auto output = advance(engine);
+            std::vector<int> ids(targets.size());
+            const int count = ACCSIM_GetDetectedTargetIds(ids.data(), static_cast<int>(ids.size()));
+            require(count >= 0, "Sensor detection IDs available");
+            ids.resize(count);
+            require(ids == expected_ids, "Expected visible target IDs in native order");
+            require(output.target_count == count, "Only detected snapshots supplied to ACC");
+            require(output.lead_id == lead, "Native selection uses sensor-filtered targets");
+            if (expected_ids.empty()) {
+                near(output.desired_speed_mps, 10.07, "Excluded targets cannot brake ego");
+            }
+        };
+        sensor_check("sensor_visible", {{25, 8}}, {1}, 1);
+        sensor_check("sensor_far", {{80, 0}}, {}, -1);
+        sensor_check("sensor_rear", {{-25, 0}}, {}, -1);
+        sensor_check("sensor_fov", {{25, 0, 20}}, {}, -1);
+        sensor_check("sensor_near", {{1, 0}}, {}, -1);
+        sensor_check("sensor_order", {{45, 10}, {25, 10}, {-25, 0}, {80, 0}}, {1, 2}, 2);
+
+        // A target crosses into range on step 2: catches stale/player-time sampling.
+        {
+            const auto directory = root / "sensor_timing";
+            const auto scene = fixture(directory, 0, 0, {{60.15, 10, 0, 0, accsim::pi}});
+            const ACCSIM_SensorConfig sensor{1, 0, 0, .5, 0, 0, 60, accsim::pi / 3};
+            accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor);
+            require(advance(engine).target_count == 0, "Target outside range at first controller step");
+            require(advance(engine).target_count == 1, "Sensor refreshed at second controller step");
+        }
+
+        // All visible: sensor-fed copies and all-target copies execute identically.
+        std::vector<accsim::WorldTruthFrame> baseline;
+        std::vector<int> baseline_leads;
+        for (bool sensor_enabled : {false, true}) {
+            const auto directory = root / (sensor_enabled ? "sensor_identity" : "copies_identity");
+            const auto scene = fixture(directory, 10, 20, {{25, 8}, {45, 10}});
+            const ACCSIM_SensorConfig sensor{sensor_enabled, 0, 0, .5, 0, 0, 100, accsim::pi};
+            accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor);
+            for (int step = 0; step < 20; ++step) {
+                const auto output = advance(engine);
+                const auto world = engine.truth();
+                if (!sensor_enabled) {
+                    baseline.push_back(world);
+                    baseline_leads.push_back(output.lead_id);
+                } else {
+                    near(world.ego.speed, baseline[step].ego.speed, "All-visible native speed identity", 0);
+                    near(world.ego.pose.x, baseline[step].ego.pose.x, "All-visible native position identity", 0);
+                    require(output.lead_id == baseline_leads[step], "All-visible target selection identity");
+                }
+            }
+        }
+
         // Several consecutive steps detect accidental controller reconstruction:
         // cruise must keep its original set speed, not reset it to each ego speed.
         const auto directory = root / "persistent";

@@ -34,7 +34,8 @@ ObjectState state(int id) {
 } // namespace
 
 EsminiAdapter::EsminiAdapter(const PreparedScenario& scenario, const std::filesystem::path& output,
-                             const std::filesystem::path& resources, double dt, bool viewer) {
+                             const std::filesystem::path& resources, double dt, bool viewer,
+                             const ACCSIM_SensorConfig& sensor) {
     // Build the arguments for the embedded esmini engine, not for acc_sim parsing.
     std::vector<std::string> options = {
         "acc_sim",
@@ -67,6 +68,7 @@ EsminiAdapter::EsminiAdapter(const PreparedScenario& scenario, const std::filesy
     }
 
     // Register our controller names before esmini reads them from the scenario.
+    checked(ACCSIM_ConfigureSensor(&sensor), "Invalid ideal sensor settings");
     ACCSIM_RegisterPersistentAcc();
 
     // Load the generated scenario and initialize esmini. Zero means success.

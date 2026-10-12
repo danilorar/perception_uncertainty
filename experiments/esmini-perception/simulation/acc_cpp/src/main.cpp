@@ -41,6 +41,9 @@ struct Options {
     double set_speed = -1;
     bool native_reference = false;
 
+    // Optional esmini ObjectSensor; disabled keeps the all-target baseline.
+    ACCSIM_SensorConfig sensor{0, 0, 0, 0.5, 0, 0, 100, pi / 3};
+
     // Uncertainty is not connected; only zero dropout is accepted.
     double dropout_p = 0;
 
@@ -148,7 +151,10 @@ void read_command_line(int argc, char** argv, std::map<std::string, std::string>
                 << "  --native-reference true|false (default false: independent target copies)\n"
                 << "  --stop-on-collision true|false --detailed-logs true|false\n"
                 << "  --viewer true|false (default false; requires graphics build)\n"
-                << "ACC-only simulation; no sensor filtering or uncertainty yet.\n";
+                << "  --ideal-sensor true|false (default false: all targets)\n"
+                << "  --sensor-x-m 0 --sensor-y-m 0 --sensor-z-m .5 --sensor-heading-rad 0\n"
+                << "  --sensor-near-m 0 --sensor-far-m 100 --sensor-horizontal-fov-rad 1.0471975512\n"
+                << "ACC-only simulation; uncertainty is not connected yet.\n";
             std::exit(0);
         }
         if (key.rfind("--", 0) != 0 || i + 1 >= argc) {
@@ -170,7 +176,9 @@ void read_command_line(int argc, char** argv, std::map<std::string, std::string>
 Options populate_options(const std::map<std::string, std::string>& values) {
     const std::vector<std::string> known = {
         "scenario", "output-dir", "esmini-home", "dt", "duration", "dropout-p",
-        "time-gap", "set-speed", "controller", "stop-on-collision", "detailed-logs", "native-reference", "viewer"};
+        "time-gap", "set-speed", "controller", "stop-on-collision", "detailed-logs", "native-reference", "viewer",
+        "ideal-sensor", "sensor-x-m", "sensor-y-m", "sensor-z-m", "sensor-heading-rad",
+        "sensor-near-m", "sensor-far-m", "sensor-horizontal-fov-rad"};
     for (const auto& entry : values) {
         if (std::find(known.begin(), known.end(), entry.first) == known.end()) {
             throw std::invalid_argument("Unknown option: " + entry.first);
@@ -204,6 +212,16 @@ Options populate_options(const std::map<std::string, std::string>& values) {
     assign_boolean(values, "detailed-logs", options.detailed_logs);
     assign_boolean(values, "native-reference", options.native_reference);
     assign_boolean(values, "viewer", options.viewer);
+    bool ideal_sensor = false;
+    assign_boolean(values, "ideal-sensor", ideal_sensor);
+    options.sensor.enabled = ideal_sensor;
+    assign_number(values, "sensor-x-m", options.sensor.x_m);
+    assign_number(values, "sensor-y-m", options.sensor.y_m);
+    assign_number(values, "sensor-z-m", options.sensor.z_m);
+    assign_number(values, "sensor-heading-rad", options.sensor.heading_rad);
+    assign_number(values, "sensor-near-m", options.sensor.near_m);
+    assign_number(values, "sensor-far-m", options.sensor.far_m);
+    assign_number(values, "sensor-horizontal-fov-rad", options.sensor.horizontal_fov_rad);
     return options;
 }
 
@@ -213,6 +231,14 @@ Options populate_options(const std::map<std::string, std::string>& values) {
 
 // Check that the options are valid for the selected controller and simulation parameters
 void validate_options(const Options& options) {
+    if (options.sensor.enabled && options.native_reference) {
+        throw std::invalid_argument("ideal-sensor and native-reference cannot both be true");
+    }
+    if (options.sensor.enabled &&
+        (options.sensor.near_m < 0 || options.sensor.far_m <= options.sensor.near_m ||
+         options.sensor.horizontal_fov_rad <= 0 || options.sensor.horizontal_fov_rad > 2 * pi)) {
+        throw std::invalid_argument("Sensor requires 0 <= near < far and 0 < horizontal FOV <= 2*pi");
+    }
     if (options.dropout_p != 0) {
         throw std::invalid_argument(
             "Persistent ACC currently requires dropout-p 0; uncertainty is not connected yet");
@@ -335,13 +361,24 @@ std::string fingerprint(const fs::path& path) {
 
 void write_config(const Options& o, const PreparedScenario& scene, const AccConfig& acc) {
     auto file = open(o.output / "run_config.json");
-    file << "{\n  \"schema_version\": 4,\n"
+    file << "{\n  \"schema_version\": 5,\n"
          << "  \"controller\": \"esmini::ControllerACC::Step\",\n"
          << "  \"esmini_tag\": \"v3.8.1\",\n"
          << "  \"esmini_commit\": \"19d26b68f7f473de4e55046a794b5fd2f91c58c8\",\n"
          << "  \"native_reference\": " << (o.native_reference ? "true" : "false") << ",\n"
          << "  \"acc_observation_source\": "
-         << json(o.native_reference ? "live native entities" : "native-position copies in scenario order") << ",\n"
+         << json(o.native_reference ? "live native entities" :
+                 (o.sensor.enabled ? "ObjectSensor detections copied in scenario order" :
+                                     "native-position copies in scenario order")) << ",\n"
+         << "  \"ideal_sensor\": " << (o.sensor.enabled ? "true" : "false") << ",\n"
+         << "  \"sensor_x_m\": " << o.sensor.x_m << ",\n"
+         << "  \"sensor_y_m\": " << o.sensor.y_m << ",\n"
+         << "  \"sensor_z_m\": " << o.sensor.z_m << ",\n"
+         << "  \"sensor_heading_rad\": " << o.sensor.heading_rad << ",\n"
+         << "  \"sensor_near_m\": " << o.sensor.near_m << ",\n"
+         << "  \"sensor_far_m\": " << o.sensor.far_m << ",\n"
+         << "  \"sensor_horizontal_fov_rad\": " << o.sensor.horizontal_fov_rad << ",\n"
+         << "  \"sensor_update_period_s\": " << o.dt << ",\n"
          << "  \"source_scenario\": " << json(scene.source.string()) << ",\n"
          << "  \"generated_scenario\": " << json(scene.generated.string()) << ",\n"
          << "  \"source_fnv1a64\": " << json(fingerprint(scene.source)) << ",\n"
@@ -494,11 +531,16 @@ int run(const Options& options) {
         options.output,
         options.resources,
         options.dt,
-        options.viewer);
+        options.viewer,
+        options.sensor);
 
     // Open ACC diagnostics separately from the boundary-truth results.
     auto native_log = open(options.output / "native_acc.csv");
     native_log << "time_s,input_speed_mps,ego_speed_mps,ego_x_m,ego_y_m,ego_z_m,lead_id,target_count,observed_gap_m\n";
+
+    // One row per executed ACC step, including an empty list when nothing is detected.
+    auto detection_log = open(options.output / "detections.csv");
+    detection_log << "step,controller_time_s,observation_mode,detected_target_ids\n";
 
     // Open results.csv and, when requested, the detailed audit CSVs.
     auto logs = open_run_logs(options.output, options.detailed_logs);
@@ -587,6 +629,23 @@ int run(const Options& options) {
         if (ACCSIM_GetPersistentAccOutput(&native) != 0) {
             throw std::runtime_error("Missing native ACC diagnostics");
         }
+
+        std::vector<int> detected_ids(static_cast<std::size_t>(native.target_count));
+        const int detected_count = ACCSIM_GetDetectedTargetIds(
+            detected_ids.data(), static_cast<int>(detected_ids.size()));
+        if (detected_count < 0) {
+            throw std::runtime_error("Missing detected target IDs");
+        }
+        detection_log << step << ',' << native.time_s << ','
+                      << (options.native_reference ? "reference" :
+                          (options.sensor.enabled ? "ideal" : "all-targets")) << ",\"[";
+        for (int i = 0; i < detected_count; ++i) {
+            if (i > 0) {
+                detection_log << ',';
+            }
+            detection_log << detected_ids[i];
+        }
+        detection_log << "]\"\n";
 
         // Read post-step truth and save it beside the ACC diagnostics.
         const auto next = engine.truth();

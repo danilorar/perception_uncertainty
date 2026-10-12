@@ -32,11 +32,11 @@ AEB/custom movement and their interfaces/tests are removed. Shared perception/Ma
 
 ## Current state
 
-- ACC-only runner, bridge ABI 4 and output schema 4; rebuild older libraries.
+- ACC-only runner, bridge ABI 5 and output schema 5; rebuild older libraries.
 - Logging remains in `main.cpp`; `results.csv` is boundary truth, `native_acc.csv` is controller diagnostics, and detailed mode adds truth/metrics CSVs.
 - Six CTests cover persistent ACC, shared perception/Markov/metrics and three scenario fixtures. Native comparison checks three scenarios × three settings.
 - Notebook is the everyday entry point. Historical reports and local results remain intact.
-- No sensor, Markov or Gaussian integration. A later change adds optional native live animation. No commit requested.
+- Optional native ObjectSensor detection is connected before each ACC step; notebook settings and detected-ID logs are available. All-target/reference baselines remain. Markov/Gaussian are not connected. Optional native live animation is supported. No commit requested.
 
 ## Validation
 

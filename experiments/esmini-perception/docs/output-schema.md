@@ -2,11 +2,12 @@
 
 Author: Zhuo Ma
 
-Current run configuration schema: **4**. The ACC-only cleanup removes unused AEB, sensor and uncertainty fields. Historical files retain their original schemas.
+Current run configuration schema: **5**. Sensor mount/range/FOV, enabled flag and update period are recorded; uncertainty remains disabled. Historical files retain their original schemas.
 
 | File | Content |
 |---|---|
 | `results.csv` | Boundary truth: step, time, ego x/y/heading/speed, reference progress, truth minimum gap/target/TTC/distance and collision |
+| `detections.csv` | One row per ACC step: `step`, `controller_time_s`, `observation_mode` (`ideal`, `all-targets`, `reference`), `detected_target_ids` (quoted JSON array, including `[]`) |
 | `native_acc.csv` | Internal ACC diagnostics and post-step ego state, described below |
 | `summary.json` | Completion, collision/end reason, duration, first collision and speeds, minimum distance/gap/TTC, first deceleration, minimum acceleration, final ego speed and close-gap stop flag |
 | `run_config.json` | Resolved ACC settings, source/road fingerprints, engine identity and observation/reference mode |
@@ -14,7 +15,7 @@ Current run configuration schema: **4**. The ACC-only cleanup removes unused AEB
 | `truth.csv`, `metrics.csv` | Optional detailed world states and safety metrics |
 | `sim.dat`, `run.log` | esmini recording and log |
 
-Detailed logs are off by default; the native comparison enables them. No perception/control/dropout CSVs are emitted until those inputs exist. `results.csv` contains pre-step truth and one terminal row, without unused controller/perception columns. Progress is a measurement, never an ego movement command. Empty metric cells mean unavailable/non-finite, not zero.
+Detailed logs are off by default; the native comparison enables them. No control/dropout CSVs are emitted. `results.csv` contains pre-step truth and one terminal row, without unused controller/perception columns. Progress is a measurement, never an ego movement command. Empty metric cells mean unavailable/non-finite, not zero.
 
 ## Native diagnostics
 
@@ -27,4 +28,4 @@ Detailed logs are off by default; the native comparison enables them. No percept
 - `observed_gap_m`: post-ACC free-space gap to the selected target, or infinity.
   This diagnostic is not the internal road-distance gap used by ACC's main gate.
 
-Zero-time initialization uses esmini's normal controller lifecycle and is not logged in `native_acc.csv`. Native ACC can apply its set-speed ceiling during initialization. ACC currently receives all non-ego targets; there are no sensor/dropout counts.
+Zero-time initialization uses esmini's normal controller lifecycle and is not logged in `native_acc.csv`. Native ACC can apply its set-speed ceiling during initialization. ACC receives detected snapshots in ideal mode, all non-ego snapshots in all-target mode, or live entities in reference mode. `target_count` counts the supplied observations. `detections.csv` uses the same controller-time timestamp; it has no terminal or initialization row.

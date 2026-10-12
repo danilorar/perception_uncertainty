@@ -1,6 +1,7 @@
 // Author: Zhuo Ma
 #pragma once
 #include "scenario.hpp"
+#include "native_acc_bridge.h"
 #include <filesystem>
 #include <vector>
 namespace accsim {
@@ -10,7 +11,8 @@ class EsminiAdapter {
     std::vector<int> target_ids_;
 public:
     EsminiAdapter(const PreparedScenario& scenario,const std::filesystem::path& output,
-                  const std::filesystem::path& resource_home,double dt,bool viewer=false);
+                  const std::filesystem::path& resource_home,double dt,bool viewer=false,
+                  const ACCSIM_SensorConfig& sensor = {});
     ~EsminiAdapter();
     EsminiAdapter(const EsminiAdapter&)=delete;
     EsminiAdapter& operator=(const EsminiAdapter&)=delete;

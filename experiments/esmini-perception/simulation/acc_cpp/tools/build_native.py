@@ -159,7 +159,7 @@ def main():
     shutil.copy2(source / "EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp", header / "esminiLib.hpp")
     (home / "version.txt").write_text('ESMINI_GIT_TAG="v3.8.1"\nESMINI_GIT_REV="' + COMMIT + '"\n', encoding="utf-8")
     manifest = {"commit": COMMIT, "controller_source_unchanged": True, "controller_sha256": controller_hashes,
-                "abi_version": 4, "controllers": ["acc"], "viewer_enabled": args.viewer,
+                "abi_version": 5, "controllers": ["acc"], "viewer_enabled": args.viewer,
                 "bridge_sha256": {name: hashlib.sha256((ROOT / "src" / name).read_bytes()).hexdigest()
                                   for name in ("controllers/acc.cpp",)}}
     (home / "accsim_bridge.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
