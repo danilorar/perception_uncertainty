@@ -18,7 +18,7 @@ AEB/custom movement and their interfaces/tests are removed. Shared perception/Ma
 - One small change at a time. Every task ends with validation and a short report for review.
 - Behavior-preserving changes are proven with **byte-identical outputs before vs. after** (see Validation).
 - Commit each completed change separately; push to the branch.
-- Keep the active ACC pipeline working. Keep `OSC-NCAP-scenarios/`, `Data/` and `reports/`.
+- Keep the active ACC pipeline working. Keep `Data/` (including `Data/OSC-NCAP-scenarios/`) and `reports/`.
 
 ## Done
 
