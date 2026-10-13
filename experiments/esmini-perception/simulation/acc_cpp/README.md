@@ -9,7 +9,7 @@ From this directory:
 python3 tools/build_native.py
 ```
 
-Requires Git, a C++17 compiler, Python ≥3.9 and CMake ≥3.21. The first build needs network access. The build downloads esmini v3.8.1 commit `19d26b68f7f473de4e55046a794b5fd2f91c58c8` and fmt, verifies upstream ACC source is unchanged, and compiles the integration into esminiLib (headless by default). No root esmini submodule is required. Rebuild after C++ changes. The project bridge ABI is now **5**; rebuild older installations.
+Requires Git, a C++17 compiler, Python ≥3.9 and CMake ≥3.21. The first build needs network access. The build downloads esmini v3.8.1 commit `19d26b68f7f473de4e55046a794b5fd2f91c58c8` and fmt, verifies upstream ACC source is unchanged, and compiles the integration into esminiLib (headless by default). No root esmini submodule is required. Rebuild after C++ changes. The project bridge ABI is now **6**; rebuild older installations.
 
 Open the notebook, edit the first cell and run the cells in order:
 
@@ -60,7 +60,21 @@ Notebook → main.cpp → scenario.cpp → generated XOSC
 
 There is one ACC integration source and no custom ego integration. `PerceptionACC` and `ReferenceACC` use the same persistent class and upstream implementation: the former substitutes independent target copies, the latter retains live native entities for validation. `PerceptionACC` receives either all non-ego targets or native `ObjectSensor` detections, in original scenario order. Copies preserve native road/lane coordinates. Relative-position links/types are rejected rather than retained in snapshots.
 
-The scenario preparer supports the supplied two-vehicle, flat, near-parallel rear-end cases. This is not yet a general scenario/controller framework.
+The recorded-trajectory preparer supports the supplied flat, near-parallel two-vehicle rear-end cases. Action-based scenarios can use inline vehicles or catalog references, with ego selected by `--ego-name`. Their Init actions, target actions and native stop conditions are preserved. Catalogs/parameters are resolved by esmini, not a custom evaluator. Later ego maneuver groups, dynamic actor selection and existing controller actions are currently rejected for explicit review. This is not unrestricted OpenSCENARIO support.
+
+The NCAP base file can now run through the same ACC pipeline:
+
+```bash
+build/runner/acc_sim --scenario ../../Data/OSC-NCAP-scenarios/OpenSCENARIO/NCAP/AEB_C2C_2023/NCAP_AEB_C2C_CCR_2023.xosc --ego-name Ego --output-dir results/ncap_base --duration 5 --ideal-sensor true --detailed-logs true
+```
+
+Use a new output directory each time. This base file's current defaults initialize both cars at 20 km/h and enable delayed target braking; it is not the CCRm variation. Parameter-distribution files in `Variations/` are not supported by the preparer yet.
+
+Optional arguments `--ego-speed-kph`, `--target-speed-kph` and `--target-braking true|false` override NCAP `Ego_speed_kph`, `GVT_init_speed_kph` and `isCCRbraking`. Speeds must be nonnegative. Omitted values retain XOSC defaults; unsupported parameter names/types fail explicitly rather than being ignored. The adapter applies them with esmini's parameter-declaration callback, lets esmini re-evaluate dependent expressions before Init, then clears the callback. `run_config.json` records requested overrides under `scenario_parameter_overrides` (`null` means omitted).
+
+For a moving target setup, add `--ego-speed-kph 50 --target-speed-kph 20 --target-braking false`. For a stationary target, use `--target-speed-kph 0 --target-braking false`. For braking, enable `--target-braking true`; the scenario still defines final target speed, deceleration and delay. These are parameterized runs of the base XOSC, not execution of the distribution files. In the notebook, append `"--ego-name", "Ego"` to the command when choosing this base file. The notebook launch can also pass the optional speed/braking arguments below.
+
+For action-based inputs, omit `--set-speed` to let native ACC capture the resolved initial speed on activation. Explicit cruise speed still works. Resolved speed and vehicle limits are recorded after initialization at simulation time zero. Original Init and target relative placement are left to esmini; unresolved relative target positions are still rejected when snapshots are created.
 
 ## Ideal sensor timing and limits
 
@@ -72,17 +86,17 @@ Defaults: mount `(0, 0, 0.5)` metres relative to ego, heading `0` radians, near/
 
 ## Settings and outputs
 
-The runner is ACC-only. `--controller acc` is accepted for explicit commands; AEB and its settings are rejected. Supported settings are `--scenario`, `--output-dir`, `--config`, `--dt`, `--duration`, `--time-gap`, `--set-speed`, `--esmini-home`, `--native-reference`, `--stop-on-collision` `--detailed-logs` and `--viewer`. `--dropout-p` accepts only zero. Ideal sensing uses `--ideal-sensor true`, `--sensor-x-m`, `--sensor-y-m`, `--sensor-z-m`, `--sensor-heading-rad`, `--sensor-near-m`, `--sensor-far-m` and `--sensor-horizontal-fov-rad`. Markov settings remain unsupported. `--esmini-home` supplies optional resources, not a replacement engine library.
+The runner is ACC-only. `--controller acc` is accepted for explicit commands; AEB and its settings are rejected. Supported settings are `--ego-name` (default `object_1`), `--scenario`, `--output-dir`, `--config`, `--dt`, `--duration`, `--time-gap`, `--set-speed`, `--esmini-home`, `--native-reference`, `--stop-on-collision` `--detailed-logs` and `--viewer`. `--dropout-p` accepts only zero. Ideal sensing uses `--ideal-sensor true`, `--sensor-x-m`, `--sensor-y-m`, `--sensor-z-m`, `--sensor-heading-rad`, `--sensor-near-m`, `--sensor-far-m` and `--sensor-horizontal-fov-rad`. Markov settings remain unsupported. `--esmini-home` supplies optional resources, not a replacement engine library.
 
 Defaults: `dt=0.01 s`, duration `10 s`, time gap `1.5 s`, cruise speed from the scenario's initial ego speed, stop on collision enabled, detailed logs disabled. Duration must be an integer multiple of `dt`. Config paths are relative to the config file; CLI paths are relative to the current directory. Output directories must be new or empty. `configs/ideal.ini` remains a valid optional ACC configuration.
 
 Each run writes:
 
-- `results.csv`: boundary ego truth, reference-path progress and truth safety metrics.
+- `results.csv`: boundary ego truth, progress and truth safety metrics. Recorded inputs use reference-path projection; action-based inputs use accumulated planar ego travel. `progress_source` in run_config identifies the definition.
 - `native_acc.csv`: controller-time input speed, post-step ego speed/position, selected lead, supplied target count and diagnostic gap.
 - `detections.csv`: one row per ACC step with step, controller time, observation mode and a JSON list of detected target IDs (including empty lists).
 - `summary.json`: collision, safety, deceleration and final-speed outcomes.
-- `run_config.json`: resolved settings, source fingerprints and pinned engine identity (schema 5).
+- `run_config.json`: resolved settings, source fingerprints and pinned engine identity (schema 6).
 - `generated/`: prepared XOSC and road snapshot; `run.log` and `sim.dat`: esmini logs/recording.
 - With detailed logs: `truth.csv` and `metrics.csv`.
 
@@ -97,7 +111,7 @@ python3 tools/compare_native_acc.py --output-dir results/native_acc_identity
 
 Choose a new comparison directory each time. On Windows also pass `--binary build/runner/Release/acc_sim.exe` and use `ctest -C Release`.
 
-Sensor fixtures additionally check near/far range, rear/FOV exclusion, detection order, current-step timing and all-visible speed/position/selection identity. Six CTests cover persistent ACC, shared perception, Markov, metrics and preparation of three supplied scenarios. ACC fixtures check cruise across steps, following calculations, nearest-target selection, rear/lateral/lookahead exclusion, bounding-box offsets/headings, speed/deceleration limits, close-gap stopping and native movement. The comparison runs three scenarios with three setting combinations and requires byte-identical native diagnostics, truth, results and summaries between copy and reference modes.
+Sensor fixtures additionally check near/far range, rear/FOV exclusion, detection order, current-step timing and all-visible speed/position/selection identity. Seven CTests cover persistent ACC, shared perception, Markov, metrics and preparation of three supplied scenarios. ACC fixtures check cruise across steps, following calculations, nearest-target selection, rear/lateral/lookahead exclusion, bounding-box offsets/headings, speed/deceleration limits, close-gap stopping and native movement. The NCAP test additionally verifies catalog initialization, native cruise capture at time zero, parameter re-evaluation, moving/stationary/braking target setups, exact copy/ideal/reference identity, and callback cleanup after successful and failed runs. The comparison runs three scenarios with three setting combinations and requires byte-identical native diagnostics, truth, results and summaries between copy and reference modes.
 
 The obsolete ACC packet wrapper, AEB bridges/test and custom movement code were removed. The dropout comparison, Markov sensitivity and perception replay tools were removed because their workflows require the retired path. The historical batch exporter was also removed because no supported ACC workflow uses it. [Reports](reports/README.md) may contain historical commands that no longer exist.
 

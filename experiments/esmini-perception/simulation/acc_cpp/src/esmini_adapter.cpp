@@ -15,6 +15,34 @@ void checked(int status, const char* operation) {
     }
 }
 
+// Callback storage lives until SE_InitWithArgs returns; never throw through esmini.
+struct ParameterCallbackData {
+    const ScenarioOverrides& values;
+    bool called = false;
+    std::string error;
+};
+
+void apply_parameters(void* user_data) {
+    auto& data = *static_cast<ParameterCallbackData*>(user_data);
+    data.called = true;
+    try {
+        if (data.values.set_ego_speed) {
+            checked(SE_SetParameterDouble("Ego_speed_kph", data.values.ego_speed_kph),
+                    "Cannot override Ego_speed_kph: missing or wrong parameter type");
+        }
+        if (data.values.set_target_speed) {
+            checked(SE_SetParameterDouble("GVT_init_speed_kph", data.values.target_speed_kph),
+                    "Cannot override GVT_init_speed_kph: missing or wrong parameter type");
+        }
+        if (data.values.set_target_braking) {
+            checked(SE_SetParameterBool("isCCRbraking", data.values.target_braking),
+                    "Cannot override isCCRbraking: missing or wrong parameter type");
+        }
+    } catch (const std::exception& error) {
+        data.error = error.what();
+    }
+}
+
 ObjectState state(int id) {
     SE_ScenarioObjectState s{};
     checked(SE_GetObjectState(id, &s), "SE_GetObjectState failed");
@@ -35,7 +63,7 @@ ObjectState state(int id) {
 
 EsminiAdapter::EsminiAdapter(const PreparedScenario& scenario, const std::filesystem::path& output,
                              const std::filesystem::path& resources, double dt, bool viewer,
-                             const ACCSIM_SensorConfig& sensor) {
+                             const ACCSIM_SensorConfig& sensor, const ScenarioOverrides& overrides) {
     // Build the arguments for the embedded esmini engine, not for acc_sim parsing.
     std::vector<std::string> options = {
         "acc_sim",
@@ -73,16 +101,32 @@ EsminiAdapter::EsminiAdapter(const PreparedScenario& scenario, const std::filesy
 
     // Load the generated scenario and initialize esmini. Zero means success.
     // esmini manages run.log and sim.dat; main.cpp opens the JSON and CSV outputs.
-    if (SE_InitWithArgs(static_cast<int>(argv.size()), argv.data()) != 0) {
+    const bool has_overrides = overrides.set_ego_speed || overrides.set_target_speed ||
+                               overrides.set_target_braking;
+    ParameterCallbackData callback{overrides, false, {}};
+    SE_RegisterParameterDeclarationCallback(has_overrides ? apply_parameters : nullptr,
+                                             has_overrides ? &callback : nullptr);
+    int status = -1;
+    try {
+        status = SE_InitWithArgs(static_cast<int>(argv.size()), argv.data());
+    } catch (...) {
+        SE_RegisterParameterDeclarationCallback(nullptr, nullptr);
         SE_Close();
-        throw std::runtime_error("Cannot initialize esmini; inspect run.log");
+        throw;
+    }
+    // esmini retains callbacks between runs: remove the pointer to local storage.
+    SE_RegisterParameterDeclarationCallback(nullptr, nullptr);
+    if (!callback.error.empty() || (has_overrides && !callback.called) || status != 0) {
+        SE_Close();
+        throw std::runtime_error(callback.error.empty()
+            ? "Cannot initialize esmini; inspect run.log" : callback.error);
     }
     active_ = true;
     try {
         // Remember object IDs for later truth sampling.
-        ego_id_ = SE_GetIdByName("object_1");
+        ego_id_ = SE_GetIdByName(scenario.ego_name.c_str());
         if (ego_id_ < 0) {
-            throw std::runtime_error("Missing object_1");
+            throw std::runtime_error("Missing ego object: " + scenario.ego_name);
         }
         const int count = SE_GetNumberOfObjects();
         if (count < 1) {

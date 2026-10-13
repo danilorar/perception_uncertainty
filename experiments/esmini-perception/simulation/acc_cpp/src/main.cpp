@@ -32,9 +32,13 @@ struct Options {
 
     // Simulation: controller selection and the common simulation clock.
     std::string controller = "acc";
+    std::string ego_name = "object_1";
     double dt = 0.01;
     double duration = 10;
     bool stop_on_collision = true;
+
+    // Optional NCAP parameter overrides; absent arguments preserve source defaults.
+    ScenarioOverrides scenario_overrides;
 
     // ACC: -1 uses the scenario's initial speed.
     double time_gap = 1.5;
@@ -146,6 +150,8 @@ void read_command_line(int argc, char** argv, std::map<std::string, std::string>
         if (key == "--help") {
             std::cout
                 << "acc_sim --scenario PATH --output-dir NEW_DIRECTORY [--config FILE]\n"
+                << "  --ego-name NAME (default object_1)\n"
+                << "  --ego-speed-kph KPH --target-speed-kph KPH --target-braking true|false\n"
                 << "  --dt .01 --duration 10 --time-gap 1.5 --set-speed MPS\n"
                 << "  --esmini-home RESOURCES --controller acc --dropout-p 0\n"
                 << "  --native-reference true|false (default false: independent target copies)\n"
@@ -163,7 +169,7 @@ void read_command_line(int argc, char** argv, std::map<std::string, std::string>
         ++i;
         const std::string value = argv[i];
         if (key != "--config") {
-            values[key.substr(2)] = value;
+            values[key.substr(2)] = value; // Store the option name and its text value.
         }
     }
 }
@@ -172,13 +178,15 @@ void read_command_line(int argc, char** argv, std::map<std::string, std::string>
 // =========================POPULATE OPTIONS========================
 // =================================================================
 
-// Assign values from the config and command line to the Options struct
+// Convert config and command-line text into Options for run().
+// validate_options() then checks whether those settings are consistent.
 Options populate_options(const std::map<std::string, std::string>& values) {
     const std::vector<std::string> known = {
         "scenario", "output-dir", "esmini-home", "dt", "duration", "dropout-p",
-        "time-gap", "set-speed", "controller", "stop-on-collision", "detailed-logs", "native-reference", "viewer",
+        "time-gap", "set-speed", "controller", "ego-name", "stop-on-collision", "detailed-logs", "native-reference", "viewer",
         "ideal-sensor", "sensor-x-m", "sensor-y-m", "sensor-z-m", "sensor-heading-rad",
-        "sensor-near-m", "sensor-far-m", "sensor-horizontal-fov-rad"};
+        "sensor-near-m", "sensor-far-m", "sensor-horizontal-fov-rad",
+        "ego-speed-kph", "target-speed-kph", "target-braking"};
     for (const auto& entry : values) {
         if (std::find(known.begin(), known.end(), entry.first) == known.end()) {
             throw std::invalid_argument("Unknown option: " + entry.first);
@@ -199,9 +207,20 @@ Options populate_options(const std::map<std::string, std::string>& values) {
     if (values.count("controller")) {
         options.controller = values.at("controller");
     }
+    if (values.count("ego-name")) {
+        options.ego_name = values.at("ego-name"); // default object_1
+    }
     if (options.controller != "acc") {
         throw std::invalid_argument("Only controller acc is supported");
     }
+
+    auto& overrides = options.scenario_overrides;
+    overrides.set_ego_speed = values.count("ego-speed-kph") != 0;
+    overrides.set_target_speed = values.count("target-speed-kph") != 0;
+    overrides.set_target_braking = values.count("target-braking") != 0;
+    assign_number(values, "ego-speed-kph", overrides.ego_speed_kph);
+    assign_number(values, "target-speed-kph", overrides.target_speed_kph);
+    assign_boolean(values, "target-braking", overrides.target_braking);
 
     assign_number(values, "dt", options.dt);
     assign_number(values, "duration", options.duration);
@@ -231,6 +250,13 @@ Options populate_options(const std::map<std::string, std::string>& values) {
 
 // Check that the options are valid for the selected controller and simulation parameters
 void validate_options(const Options& options) {
+    if ((options.scenario_overrides.set_ego_speed && options.scenario_overrides.ego_speed_kph < 0) ||
+        (options.scenario_overrides.set_target_speed && options.scenario_overrides.target_speed_kph < 0)) {
+        throw std::invalid_argument("Scenario speed overrides must be nonnegative km/h");
+    }
+    if (options.ego_name.empty()) {
+        throw std::invalid_argument("ego-name must not be empty");
+    }
     if (options.sensor.enabled && options.native_reference) {
         throw std::invalid_argument("ideal-sensor and native-reference cannot both be true");
     }
@@ -359,12 +385,18 @@ std::string fingerprint(const fs::path& path) {
 // ===================== WRITE RUN CONFIGURATION =====================
 // ====================================================================
 
-void write_config(const Options& o, const PreparedScenario& scene, const AccConfig& acc) {
+void write_config(const Options& o, const PreparedScenario& scene, const AccConfig& acc, double initial_speed) {
     auto file = open(o.output / "run_config.json");
-    file << "{\n  \"schema_version\": 5,\n"
+    const auto& overrides = o.scenario_overrides;
+    file << "{\n  \"schema_version\": 6,\n"
          << "  \"controller\": \"esmini::ControllerACC::Step\",\n"
          << "  \"esmini_tag\": \"v3.8.1\",\n"
          << "  \"esmini_commit\": \"19d26b68f7f473de4e55046a794b5fd2f91c58c8\",\n"
+         << "  \"ego_name\": " << json(scene.ego_name) << ",\n"
+         << "  \"scenario_parameter_overrides\": {\n"
+         << "    \"Ego_speed_kph\": " << (overrides.set_ego_speed ? numeric(overrides.ego_speed_kph) : "null") << ",\n"
+         << "    \"GVT_init_speed_kph\": " << (overrides.set_target_speed ? numeric(overrides.target_speed_kph) : "null") << ",\n"
+         << "    \"isCCRbraking\": " << (overrides.set_target_braking ? (overrides.target_braking ? "true" : "false") : "null") << "\n  },\n"
          << "  \"native_reference\": " << (o.native_reference ? "true" : "false") << ",\n"
          << "  \"acc_observation_source\": "
          << json(o.native_reference ? "live native entities" :
@@ -387,7 +419,8 @@ void write_config(const Options& o, const PreparedScenario& scene, const AccConf
          << "  \"duration_s\": " << o.duration << ",\n"
          << "  \"time_gap_s\": " << acc.time_gap_s << ",\n"
          << "  \"set_speed_mps\": " << acc.set_speed_mps << ",\n"
-         << "  \"initial_ego_speed_mps\": " << scene.reference.initial_speed() << ",\n"
+         << "  \"progress_source\": " << json(scene.reference.vertices.empty() ? "accumulated planar travel" : "recorded reference path projection") << ",\n"
+         << "  \"initial_ego_speed_mps\": " << initial_speed << ",\n"
          << "  \"max_acceleration_mps2\": " << acc.max_acceleration << ",\n"
          << "  \"max_deceleration_mps2\": " << acc.max_deceleration << ",\n"
          << "  \"stop_on_collision\": " << (o.stop_on_collision ? "true" : "false") << ",\n"
@@ -504,25 +537,18 @@ int run(const Options& options) {
 
     AccConfig acc_config;
     acc_config.time_gap_s = options.time_gap;
-    acc_config.set_speed_mps = options.set_speed; // -1 resolves to trajectory initial speed.
+    acc_config.set_speed_mps = options.set_speed; // -1 uses the scenario initial speed.
 
     // Write a generated XOSC with the selected ego controller; preserve the source files.
     const auto scene = prepare_scenario(
         options.source,
-        options.output / "generated" / ("C_" + options.controller + "_" + scenario_id + ".xosc"), "object_1",
+        options.output / "generated" / ("C_" + options.controller + "_" + scenario_id + ".xosc"), options.ego_name,
         acc_config, options.native_reference);
     const auto original_hash = fingerprint(scene.source);
     const auto road_hash = fingerprint(scene.road);
     if (options.duration > scene.duration_s + 1e-8) {
         throw std::invalid_argument("duration exceeds original scenario stop time");
     }
-
-    // Resolve the settings used by native ACC.
-    acc_config.set_speed_mps = options.set_speed < 0 ? scene.reference.initial_speed() : options.set_speed;
-    acc_config.max_acceleration = scene.max_acceleration;
-    acc_config.max_deceleration = scene.max_deceleration;
-    // Save the resolved settings before starting the engine.
-    write_config(options, scene, acc_config);
 
     // Constructing engine calls SE_InitWithArgs inside esmini_adapter.cpp.
     // This loads the generated XOSC and sets up esmini recording (sim.dat and run.log).
@@ -532,7 +558,18 @@ int run(const Options& options) {
         options.resources,
         options.dt,
         options.viewer,
-        options.sensor);
+        options.sensor,
+        options.scenario_overrides);
+
+    // Read parameters and catalog limits resolved by native initialization, at t=0.
+    ACCSIM_AccInitialization initialization{};
+    if (ACCSIM_GetAccInitialization(&initialization) != 0) {
+        throw std::runtime_error("Missing native ACC initialization");
+    }
+    acc_config.set_speed_mps = initialization.set_speed_mps;
+    acc_config.max_acceleration = initialization.max_acceleration;
+    acc_config.max_deceleration = initialization.max_deceleration;
+    write_config(options, scene, acc_config, initialization.initial_speed_mps);
 
     // Open ACC diagnostics separately from the boundary-truth results.
     auto native_log = open(options.output / "native_acc.csv");
@@ -549,6 +586,9 @@ int run(const Options& options) {
     double end_time = 0;
     std::string end_reason = "duration";
 
+    double travelled_m = 0;
+    Pose previous_pose = engine.truth().ego.pose;
+
     const auto wall_start = std::chrono::steady_clock::now();
 
     // ===== 2. Simulation loop (one iteration per dt) =============================
@@ -557,7 +597,10 @@ int run(const Options& options) {
         // Snapshot the actual world at the start of this iteration, before advancement.
         const auto world = engine.truth();
         // Measure current progress before any terminal row can be written.
-        const double ego_progress_m = scene.reference.project(world.ego.pose).first;
+        travelled_m += std::hypot(world.ego.pose.x - previous_pose.x, world.ego.pose.y - previous_pose.y);
+        previous_pose = world.ego.pose;
+        const double ego_progress_m = scene.reference.vertices.empty()
+            ? travelled_m : scene.reference.project(world.ego.pose).first;
         end_time = world.time_s;
         if (std::abs(world.time_s - static_cast<double>(step) * options.dt) > 1e-7) {
             throw std::runtime_error("Simulation clock lost synchronization");
@@ -624,6 +667,17 @@ int run(const Options& options) {
         // Advance one native step: scenario actions, target snapshots, ACC and ego motion.
         // No custom vehicle integration is performed on this path.
         engine.advance_native(options.dt);
+        const auto next = engine.truth();
+        if (std::abs(next.time_s - world.time_s) < 1e-9 && engine.quit()) {
+            // A native StopTrigger may finish the storyboard without advancing time
+            // or executing ACC. Save the terminal truth, not stale ACC diagnostics.
+            end_reason = "scenario_stop";
+            write_terminal_result();
+            break;
+        }
+        if (std::abs(next.time_s - world.time_s - options.dt) > 1e-7) {
+            throw std::runtime_error("Native step did not advance by dt");
+        }
 
         // Retrieve the controller diagnostics captured during that native step.
         ACCSIM_PersistentAccOutput native{};
@@ -648,8 +702,7 @@ int run(const Options& options) {
         }
         detection_log << "]\"\n";
 
-        // Read post-step truth and save it beside the ACC diagnostics.
-        const auto next = engine.truth();
+        // Save post-step truth beside the ACC diagnostics.
         native_log << native.time_s << ',' << native.input_speed_mps << ',' << next.ego.speed << ','
                    << next.ego.pose.x << ',' << next.ego.pose.y << ',' << next.ego.pose.z << ','
                    << native.lead_id << ',' << native.target_count << ',' << native.observed_gap_m

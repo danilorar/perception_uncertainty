@@ -2,6 +2,7 @@
 #pragma once
 #include "types.hpp"
 #include <filesystem>
+#include <string>
 #include <vector>
 namespace accsim {
 struct ReferenceVertex { double time_s=0, distance_m=0; Pose pose; };
@@ -15,7 +16,9 @@ public:
 };
 struct PreparedScenario {
     std::filesystem::path source, road, generated;
+    std::string ego_name = "object_1";
     ReferencePath reference;
+    // Empty reference means native action-based initialization and distance travelled.
     double duration_s=10;
     double max_acceleration=10, max_deceleration=10;
 };

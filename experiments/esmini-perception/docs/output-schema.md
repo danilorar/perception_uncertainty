@@ -2,11 +2,11 @@
 
 Author: Zhuo Ma
 
-Current run configuration schema: **5**. Sensor mount/range/FOV, enabled flag and update period are recorded; uncertainty remains disabled. Historical files retain their original schemas.
+Current run configuration schema: **6**. Ego name, progress definition, native-resolved initialization/limits and requested scenario parameter overrides are recorded alongside sensor settings; uncertainty remains disabled. Historical files retain their original schemas.
 
 | File | Content |
 |---|---|
-| `results.csv` | Boundary truth: step, time, ego x/y/heading/speed, reference progress, truth minimum gap/target/TTC/distance and collision |
+| `results.csv` | Boundary truth: step, time, ego x/y/heading/speed, progress (reference projection or accumulated planar travel, per `progress_source`), truth minimum gap/target/TTC/distance and collision |
 | `detections.csv` | One row per ACC step: `step`, `controller_time_s`, `observation_mode` (`ideal`, `all-targets`, `reference`), `detected_target_ids` (quoted JSON array, including `[]`) |
 | `native_acc.csv` | Internal ACC diagnostics and post-step ego state, described below |
 | `summary.json` | Completion, collision/end reason, duration, first collision and speeds, minimum distance/gap/TTC, first deceleration, minimum acceleration, final ego speed and close-gap stop flag |
@@ -29,3 +29,5 @@ Detailed logs are off by default; the native comparison enables them. No control
   This diagnostic is not the internal road-distance gap used by ACC's main gate.
 
 Zero-time initialization uses esmini's normal controller lifecycle and is not logged in `native_acc.csv`. Native ACC can apply its set-speed ceiling during initialization. ACC receives detected snapshots in ideal mode, all non-ego snapshots in all-target mode, or live entities in reference mode. `target_count` counts the supplied observations. `detections.csv` uses the same controller-time timestamp; it has no terminal or initialization row.
+
+`scenario_parameter_overrides` records optional NCAP `Ego_speed_kph`, `GVT_init_speed_kph` and `isCCRbraking` overrides. A null value means no override was requested; esmini retains the source default. Overrides affect Init through the native parameter callback and derived expressions are re-evaluated before vehicles are initialized.

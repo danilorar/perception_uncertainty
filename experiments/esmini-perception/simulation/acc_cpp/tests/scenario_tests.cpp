@@ -111,6 +111,30 @@ int main(int argc,char** argv) {
         try {accsim::prepare_scenario(source,source);} catch(const std::exception&) {rejected=true;}
         require(rejected,"source overwrite was accepted");
         require(read(source)==original_bytes,"overwrite rejection changed source bytes");
+        // Ego selection must follow the requested name rather than object_1.
+        pugi::xml_document renamed;
+        require(renamed.load_string(original_bytes.c_str()), "cannot reload source fixture");
+        for (auto selected : renamed.select_nodes("//@name[.='object_1'] | //@entityRef[.='object_1']")) {
+            selected.attribute().set_value("Ego");
+        }
+        renamed.select_node("//RoadNetwork/LogicFile").node().attribute("filepath") = prepared.road.string().c_str();
+        const auto renamed_path = output.parent_path() / "renamed-ego.xosc";
+        require(renamed.save_file(renamed_path.c_str()), "cannot save renamed fixture");
+        const auto custom = accsim::prepare_scenario(
+            renamed_path, output.parent_path() / "renamed-generated.xosc", "Ego");
+        require(custom.ego_name == "Ego", "selected ego name was lost");
+        pugi::xml_document custom_xml;
+        require(custom_xml.load_file(custom.generated.c_str()), "cannot load renamed output");
+        require(bool(custom_xml.select_node("//ScenarioObject[@name='Ego']/ObjectController")),
+                "controller was not assigned to the named ego");
+        rejected = false;
+        try {
+            accsim::prepare_scenario(renamed_path, output.parent_path() / "missing-ego.xosc", "Missing");
+        } catch (const std::exception&) {
+            rejected = true;
+        }
+        require(rejected, "unknown ego name was accepted");
+
         // Reject a mixed-actor group instead of removing a target together with ego.
         const auto invalid_path=output.parent_path()/"ambiguous-fixture.xosc";
         auto actors=original.select_node("//ManeuverGroup[Actors/EntityRef/@entityRef='object_1']/Actors").node();

@@ -1,7 +1,7 @@
 // Author: Zhuo Ma
-// Scenario preparation for flat, near-parallel two-vehicle rear-end cases.
+// Scenario preparation for recorded rear-end trajectories and native action-based inputs.
 // The source is read only. Only a generated copy relinquishes ego motion to the
-// native ACC controller; the other vehicle's timed trajectory remains intact.
+// native ACC controller; target trajectories or native actions remain intact.
 // Read prepare_scenario() for the preparation steps. The helpers above it
 // read XML and measure the original path; they do not advance the simulation.
 #include "accsim/scenario.hpp"
@@ -145,6 +145,131 @@ void check_reference(const ReferencePath& reference) {
         throw std::runtime_error("ReferencePath requires at least two vertices");
     }
 }
+// =================================================================
+// ===================== ACTION-BASED SCENARIOS =====================
+// =================================================================
+// esmini resolves vehicle catalogs, parameter expressions and Init positions.
+// This path preserves target actions instead of requiring timed trajectories.
+PreparedScenario prepare_actions(pugi::xml_document& document, PreparedScenario result,
+                                 const AccConfig& acc, bool native_reference) {
+    auto root = document.child("OpenSCENARIO");
+    if (root.child("ParameterValueDistribution")) {
+        unsupported("select a base scenario, not a parameter-distribution file");
+    }
+    std::map<std::string, pugi::xml_node> objects;
+    for (auto object : root.child("Entities").children("ScenarioObject")) {
+        const std::string name = object.attribute("name").value();
+        const bool inline_vehicle = bool(object.child("Vehicle"));
+        const bool catalog_vehicle = bool(object.child("CatalogReference"));
+        if (name.empty() || inline_vehicle == catalog_vehicle || !objects.emplace(name, object).second) {
+            unsupported("unique named vehicles with one Vehicle or CatalogReference are required");
+        }
+    }
+    if (!objects.count(result.ego_name)) {
+        unsupported("requested ego was not found: " + result.ego_name);
+    }
+
+    // Preserve initialization; require explicit ego placement and a step speed.
+    pugi::xml_node ego_init;
+    for (auto init : root.child("Storyboard").child("Init").child("Actions").children("Private")) {
+        if (std::string(init.attribute("entityRef").value()) == result.ego_name) {
+            if (ego_init) {
+                unsupported("one Init/Private for ego is required");
+            }
+            ego_init = init;
+        }
+    }
+    if (!ego_init || !ego_init.select_node("./PrivateAction/TeleportAction") ||
+        !ego_init.select_node("./PrivateAction/LongitudinalAction/SpeedAction")) {
+        unsupported("action-based ego needs initial teleport and speed actions");
+    }
+    auto dynamics = ego_init.select_node("./PrivateAction/LongitudinalAction/SpeedAction/SpeedActionDynamics").node();
+    if (std::string(dynamics.attribute("dynamicsShape").value()) != "step" ||
+        number(dynamics, "value") != 0) {
+        unsupported("initial ego speed must be instantaneous");
+    }
+    if (root.select_node("./Storyboard/Init/Actions/Private/PrivateAction/ControllerAction")) {
+        unsupported("existing controller actions require explicit review");
+    }
+
+    // Reject competing ego motion, including unresolved catalog maneuvers on ego.
+    // Observer catalogs with no actors cannot issue private vehicle actions.
+    for (auto selected : root.select_nodes("./Storyboard/Story/Act/ManeuverGroup")) {
+        auto group = selected.node();
+        if (group.child("Actors").attribute("selectTriggeringEntities").as_bool()) {
+            unsupported("dynamic actor selection");
+        }
+        for (auto actor : group.child("Actors").children("EntityRef")) {
+            const std::string name = actor.attribute("entityRef").value();
+            if (!objects.count(name) || name == result.ego_name) {
+                unsupported("later ego actions or unresolved actors require explicit review");
+            }
+        }
+    }
+    if (root.select_node(".//UserDefinedAction | .//EntityAction")) {
+        unsupported("custom/global entity actions require explicit review");
+    }
+
+    // Anchor resource references to their source directory, not the output folder.
+    auto resolve = [&](const char* text) {
+        fs::path path(text);
+        if (path.is_relative()) {
+            path = result.source.parent_path() / path;
+        }
+        return fs::canonical(path);
+    };
+    auto road = root.child("RoadNetwork").child("LogicFile");
+    result.road = resolve(road.attribute("filepath").value());
+    fs::create_directories(result.generated.parent_path());
+    const auto snapshot = result.generated.parent_path() / result.road.filename();
+    if (result.generated == result.road || snapshot == result.source ||
+        (fs::exists(snapshot) && fs::equivalent(snapshot, result.source))) {
+        unsupported("generated inputs must not overwrite original files");
+    }
+    if (!fs::exists(snapshot) || !fs::equivalent(snapshot, result.road)) {
+        fs::copy_file(result.road, snapshot, fs::copy_options::overwrite_existing);
+    }
+    road.attribute("filepath") = snapshot.string().c_str();
+    for (auto selected : root.select_nodes("./CatalogLocations/*/Directory")) {
+        auto directory = selected.node();
+        directory.attribute("path") = resolve(directory.attribute("path").value()).string().c_str();
+    }
+    for (auto selected : root.select_nodes("./RoadNetwork/SceneGraphFile")) {
+        auto scene = selected.node();
+        if (std::string(scene.attribute("filepath").value()).size()) {
+            scene.attribute("filepath") = resolve(scene.attribute("filepath").value()).string().c_str();
+        }
+    }
+
+    auto ego = objects.at(result.ego_name);
+    ego.remove_child("ObjectController");
+    auto controller = ego.append_child("ObjectController").append_child("Controller");
+    controller.append_attribute("name") = "NativeEsminiACC";
+    auto properties = controller.append_child("Properties");
+    property(properties, "esminiController", native_reference ? "ReferenceACC" : "PerceptionACC");
+    property(properties, "mode", "override");
+    auto setting = [&](const char* name, double value) {
+        auto item = properties.append_child("Property");
+        item.append_attribute("name") = name;
+        item.append_attribute("value").set_value(value, 17);
+    };
+    setting("timeGap", acc.time_gap_s);
+    setting("lateralDist", acc.lateral_distance_m);
+    // Omission lets native Activate capture the resolved initial ego speed.
+    if (acc.set_speed_mps >= 0) {
+        setting("setSpeed", acc.set_speed_mps);
+    }
+    auto activate = ego_init.append_child("PrivateAction").append_child("ControllerAction")
+                            .append_child("ActivateControllerAction");
+    activate.append_attribute("longitudinal") = "true";
+    activate.append_attribute("lateral") = "true";
+    // Native stop triggers remain; the runner's requested duration is an upper limit.
+    result.duration_s = infinity;
+    if (!document.save_file(result.generated.c_str(), "  ", pugi::format_default, pugi::encoding_utf8)) {
+        throw std::runtime_error("Cannot save prepared action scenario");
+    }
+    return result;
+}
 } // namespace
 
 // =================================================================
@@ -241,6 +366,7 @@ PreparedScenario prepare_scenario(const std::filesystem::path& source, const std
     // ===== 1. Load the source without overwriting it ===========================
     // XML edits below affect only this in-memory copy.
     PreparedScenario result;
+    result.ego_name = ego_name;
     result.source = fs::canonical(source);
     result.generated = fs::weakly_canonical(fs::absolute(generated));
     if (result.generated == result.source ||
@@ -256,6 +382,10 @@ PreparedScenario prepare_scenario(const std::filesystem::path& source, const std
     auto root = document.child("OpenSCENARIO");
     if (!root) {
         unsupported("missing OpenSCENARIO root");
+    }
+
+    if (!root.select_node(".//Trajectory")) {
+        return prepare_actions(document, result, acc, native_reference);
     }
 
     // ===== 2. Find the two vehicles ===========================================

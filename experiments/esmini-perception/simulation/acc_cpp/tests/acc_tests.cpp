@@ -3,6 +3,7 @@
 // Exceptions keep every check active in Release builds.
 #include "accsim/engine.hpp"
 #include "native_acc_bridge.h"
+#include "pugixml.hpp"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -101,12 +102,154 @@ ACCSIM_PersistentAccOutput advance(accsim::EsminiAdapter& engine) {
     near(after.time_s - before.time_s, dt, "Exactly one simulation timestep");
     return output;
 }
+
+void check_action_scenario(const std::filesystem::path& source, const std::filesystem::path& root) {
+    std::vector<accsim::WorldTruthFrame> baseline;
+    std::vector<int> leads;
+    for (int mode = 0; mode < 3; ++mode) {
+        const auto directory = root / ("actions_" + std::to_string(mode));
+        const auto scene = accsim::prepare_scenario(source, directory / "generated.xosc", "Ego",
+                                                    accsim::AccConfig{1.5, -1}, mode == 2);
+        require(scene.reference.vertices.empty(), "Action scenario must not invent a reference trajectory");
+        const ACCSIM_SensorConfig sensor{mode == 1, 0, 0, .5, 0, 0, 100, accsim::pi};
+        accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor);
+        ACCSIM_AccInitialization init{};
+        require(ACCSIM_GetAccInitialization(&init) == 0, "Native initialization available");
+        near(init.initial_speed_mps, 20.0 / 3.6, "Parameter-derived ego speed", 1e-6);
+        near(init.set_speed_mps, init.initial_speed_mps, "Native cruise captures initialized speed");
+        near(init.max_acceleration, 5, "Catalog vehicle acceleration limit");
+        near(engine.truth().time_s, 0, "No initialization timestep");
+        near(engine.truth().targets[0].speed, 20.0 / 3.6, "Target initial speed", 1e-6);
+        for (int step = 0; step < 500; ++step) {
+            engine.advance_native(dt);
+            const auto world = engine.truth();
+            ACCSIM_PersistentAccOutput output{};
+            require(ACCSIM_GetPersistentAccOutput(&output) == 0, "Action ACC diagnostics");
+            if (mode == 0) {
+                baseline.push_back(world);
+                leads.push_back(output.lead_id);
+            } else {
+                near(world.ego.speed, baseline[step].ego.speed, "Action mode speed identity", 0);
+                near(world.ego.pose.x, baseline[step].ego.pose.x, "Action mode position identity", 0);
+                near(world.targets[0].speed, baseline[step].targets[0].speed, "Target action preserved", 0);
+                require(output.lead_id == leads[step], "Action target selection identity");
+            }
+        }
+        require(engine.truth().targets[0].speed < 3, "Native delayed target braking still executes");
+    }
+    // The same base XOSC supports moving, stationary and braking target setups.
+    for (const std::string setup : {"CCRm", "CCRs", "CCRb"}) {
+        accsim::ScenarioOverrides overrides;
+        overrides.set_ego_speed = true;
+        overrides.ego_speed_kph = 50;
+        overrides.set_target_speed = true;
+        overrides.target_speed_kph = setup == "CCRs" ? 0 : (setup == "CCRb" ? 50 : 20);
+        overrides.set_target_braking = true;
+        overrides.target_braking = setup == "CCRb";
+        baseline.clear();
+        leads.clear();
+        for (int mode = 0; mode < 3; ++mode) {
+            const auto directory = root / (setup + "_" + std::to_string(mode));
+            const auto scene = accsim::prepare_scenario(source, directory / "generated.xosc", "Ego",
+                                                        accsim::AccConfig{1.5, -1}, mode == 2);
+            const ACCSIM_SensorConfig sensor{mode == 1, 0, 0, .5, 0, 0, 100, accsim::pi};
+            accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor, overrides);
+            ACCSIM_AccInitialization init{};
+            require(ACCSIM_GetAccInitialization(&init) == 0, "Overridden initialization available");
+            near(init.initial_speed_mps, 50.0 / 3.6, "Derived ego speed is re-evaluated", 1e-6);
+            near(init.set_speed_mps, init.initial_speed_mps, "ACC captures overridden initial speed");
+            near(engine.truth().time_s, 0, "Overrides do not advance time");
+            near(engine.truth().targets[0].speed, overrides.target_speed_kph / 3.6,
+                 "Derived target speed is re-evaluated", 1e-6);
+            for (int step = 0; step < 500; ++step) {
+                engine.advance_native(dt);
+                const auto world = engine.truth();
+                ACCSIM_PersistentAccOutput output{};
+                require(ACCSIM_GetPersistentAccOutput(&output) == 0, "Overridden ACC diagnostics");
+                if (!overrides.target_braking) {
+                    near(world.targets[0].speed, overrides.target_speed_kph / 3.6,
+                         "Disabled braking preserves constant target speed", 1e-6);
+                }
+                if (mode == 0) {
+                    baseline.push_back(world);
+                    leads.push_back(output.lead_id);
+                } else {
+                    near(world.ego.speed, baseline[step].ego.speed, "Override mode speed identity", 0);
+                    near(world.ego.pose.x, baseline[step].ego.pose.x, "Override mode position identity", 0);
+                    near(world.targets[0].speed, baseline[step].targets[0].speed, "Override target motion identity", 0);
+                    require(output.lead_id == leads[step], "Override target selection identity");
+                }
+            }
+            if (overrides.target_braking) {
+                require(engine.truth().targets[0].speed < overrides.target_speed_kph / 3.6 - 3,
+                        "Enabled braking still executes");
+            }
+        }
+    }
+    // No overrides after an overridden run: no retained callback or values.
+    {
+        const auto directory = root / "defaults_after_overrides";
+        const auto scene = accsim::prepare_scenario(source, directory / "generated.xosc", "Ego");
+        accsim::EsminiAdapter engine(scene, directory, {}, dt);
+        near(engine.truth().ego.speed, 20.0 / 3.6, "Default ego speed restored", 1e-6);
+        near(engine.truth().targets[0].speed, 20.0 / 3.6, "Default target speed restored", 1e-6);
+    }
+    // Later ego instructions must be rejected instead of silently competing with ACC.
+    pugi::xml_document document;
+    require(document.load_file(source.c_str()), "Load NCAP fixture");
+    document.select_node("//ManeuverGroup[@name='GVT_TeleportAndBrake']/Actors/EntityRef")
+            .node().attribute("entityRef") = "Ego";
+    const auto invalid = root / "ego-conflict.xosc";
+    require(document.save_file(invalid.c_str()), "Save conflicting fixture");
+    bool rejected = false;
+    try {
+        accsim::prepare_scenario(invalid, root / "invalid-generated.xosc", "Ego");
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+    require(rejected, "Later ego movement must be rejected");
+}
 }
 
 int main(int argc, char** argv) {
     try {
-        require(argc == 2, "acc_tests TEMP_DIRECTORY");
+        if (argc == 3) {
+            check_action_scenario(std::filesystem::absolute(argv[2]), std::filesystem::absolute(argv[1]));
+            std::cout << "NCAP catalog initialization, target actions and native identity checks passed\n";
+            return 0;
+        }
+        require(argc == 2, "acc_tests TEMP_DIRECTORY [NCAP_SCENARIO]");
         const auto root = std::filesystem::absolute(argv[1]);
+        // Inline vehicles can also use native Init actions without trajectories.
+        {
+            const auto directory = root / "inline_actions";
+            const auto source = fixture(directory, 10, 20, {{25, 8}});
+            pugi::xml_document document;
+            require(document.load_file(source.source.c_str()), "Load inline action fixture");
+            for (auto selected : document.select_nodes("//PrivateAction/ControllerAction")) {
+                selected.node().parent().remove_child(selected.node());
+            }
+            require(document.save_file(source.source.c_str()), "Save inline action fixture");
+            const auto scene = accsim::prepare_scenario(source.source, directory / "prepared.xosc");
+            // An override on a scenario without that parameter must fail explicitly.
+            accsim::ScenarioOverrides invalid;
+            invalid.set_ego_speed = true;
+            invalid.ego_speed_kph = 50;
+            bool rejected = false;
+            try {
+                accsim::EsminiAdapter failed(scene, directory, {}, dt, false, {}, invalid);
+            } catch (const std::exception& error) {
+                rejected = std::string(error.what()).find("Ego_speed_kph") != std::string::npos;
+            }
+            require(rejected, "Missing parameter override must fail clearly");
+            // This successful default run also checks callback cleanup after failure.
+            accsim::EsminiAdapter engine(scene, directory, {}, dt);
+            ACCSIM_AccInitialization init{};
+            require(ACCSIM_GetAccInitialization(&init) == 0, "Inline native initialization");
+            near(init.initial_speed_mps, 10, "Inline Init speed preserved");
+            near(init.set_speed_mps, 10, "Inline native cruise default");
+            advance(engine);
+        }
         int index = 0;
         const auto check = [&](double speed, double set_speed, const std::vector<Target>& targets,
                                int lead, double expected_speed, double center = 0) {

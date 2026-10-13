@@ -29,6 +29,8 @@ ACCSIM_PersistentAccOutput last_output{};
 bool output_valid = false;
 ACCSIM_SensorConfig sensor_config{};
 std::vector<int> detected_ids;
+ACCSIM_AccInitialization initialization{};
+bool initialization_valid = false;
 
 // =================================================================
 // Persistent native ACC: prepare observations, execute ACC, record output
@@ -40,6 +42,7 @@ class PersistentAcc final : public ControllerACC {
     ACCSIM_SensorConfig sensor_settings_;
     std::unique_ptr<ObjectSensor> sensor_;
     std::size_t sensor_capacity_ = 0;
+    double configured_speed_ = -1;
 
     // =============================================================
     // IDEAL SENSOR: create esmini ObjectSensor and size its hit buffer
@@ -61,10 +64,31 @@ public:
     PersistentAcc(InitArgs* args, bool copies)
         : ControllerACC(args), copies_(copies), sensor_settings_(sensor_config) {
         output_valid = false;
+        initialization_valid = false;
+        if (args && args->properties && args->properties->ValueExists("setSpeed")) {
+            configured_speed_ = std::stod(args->properties->GetValueStr("setSpeed"));
+        }
+    }
+
+    int Activate(const ControlActivationMode (&mode)[static_cast<unsigned int>(ControlDomains::COUNT)]) override {
+        if (!initialization_valid) {
+            if (object_->GetType() != Object::Type::VEHICLE) {
+                throw std::runtime_error("ACC ego must resolve to a vehicle");
+            }
+            initialization = {
+                object_->GetSpeed(),
+                configured_speed_ < 0 ? object_->GetSpeed() : configured_speed_,
+                object_->GetMaxAcceleration(),
+                object_->GetMaxDeceleration()
+            };
+            initialization_valid = true;
+        }
+        return ControllerACC::Activate(mode);
     }
 
     ~PersistentAcc() override {
         output_valid = false;
+        initialization_valid = false;
     }
 
     void InitPostPlayer() override {
@@ -245,4 +269,12 @@ extern "C" ACCSIM_API int ACCSIM_GetDetectedTargetIds(int* ids, int capacity) {
     }
     std::copy(detected_ids.begin(), detected_ids.end(), ids);
     return static_cast<int>(detected_ids.size());
+}
+
+extern "C" ACCSIM_API int ACCSIM_GetAccInitialization(ACCSIM_AccInitialization* output) {
+    if (!output || !initialization_valid) {
+        return -1;
+    }
+    *output = initialization;
+    return 0;
 }

@@ -24,6 +24,11 @@ typedef struct {
 ACCSIM_API int ACCSIM_ConfigureSensor(const ACCSIM_SensorConfig* config);
 // Copy the last controller-time detected IDs; returns count, or -1 for insufficient capacity.
 ACCSIM_API int ACCSIM_GetDetectedTargetIds(int* ids, int capacity);
+// Captured before native ACC activation modifies ego speed or heading.
+typedef struct {
+    double initial_speed_mps, set_speed_mps, max_acceleration, max_deceleration;
+} ACCSIM_AccInitialization;
+ACCSIM_API int ACCSIM_GetAccInitialization(ACCSIM_AccInitialization* output);
 // Register before SE_Init; esmini owns each persistent controller instance.
 ACCSIM_API void ACCSIM_RegisterPersistentAcc(void);
 typedef struct {
