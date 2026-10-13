@@ -23,7 +23,8 @@ public:
     EsminiAdapter(const PreparedScenario& scenario,const std::filesystem::path& output,
                   const std::filesystem::path& resource_home,double dt,bool viewer=false,
                   const ACCSIM_SensorConfig& sensor = {},
-                  const ScenarioOverrides& overrides = {});
+                  const ScenarioOverrides& overrides = {},
+                  const ACCSIM_MarkovConfig& markov = {});
     ~EsminiAdapter();
     EsminiAdapter(const EsminiAdapter&)=delete;
     EsminiAdapter& operator=(const EsminiAdapter&)=delete;

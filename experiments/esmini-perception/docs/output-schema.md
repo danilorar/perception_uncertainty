@@ -2,12 +2,12 @@
 
 Author: Zhuo Ma
 
-Current run configuration schema: **6**. Ego name, progress definition, native-resolved initialization/limits and requested scenario parameter overrides are recorded alongside sensor settings; uncertainty remains disabled. Historical files retain their original schemas.
+Current run configuration schema: **7**. Ego name, progress definition, native-resolved initialization/limits and requested scenario parameter overrides are recorded alongside sensor settings; perception mode and Markov probability, mean missing duration, seed and initialization policy are recorded. Historical files retain their original schemas.
 
 | File | Content |
 |---|---|
 | `results.csv` | Boundary truth: step, time, ego x/y/heading/speed, progress (reference projection or accumulated planar travel, per `progress_source`), truth minimum gap/target/TTC/distance and collision |
-| `detections.csv` | One row per ACC step: `step`, `controller_time_s`, `observation_mode` (`ideal`, `all-targets`, `reference`), `detected_target_ids` (quoted JSON array, including `[]`) |
+| `detections.csv` | One row per ACC step: `step`, `controller_time_s`, `observation_mode` (`ideal`, `markov`, `all-targets`, `reference`), `detected_target_ids`, `dropped_target_ids`, `supplied_target_ids` (quoted JSON arrays, including `[]`) |
 | `native_acc.csv` | Internal ACC diagnostics and post-step ego state, described below |
 | `summary.json` | Completion, collision/end reason, duration, first collision and speeds, minimum distance/gap/TTC, first deceleration, minimum acceleration, final ego speed and close-gap stop flag |
 | `run_config.json` | Resolved ACC settings, source/road fingerprints, engine identity and observation/reference mode |
@@ -31,3 +31,5 @@ Detailed logs are off by default; the native comparison enables them. No control
 Zero-time initialization uses esmini's normal controller lifecycle and is not logged in `native_acc.csv`. Native ACC can apply its set-speed ceiling during initialization. ACC receives detected snapshots in ideal mode, all non-ego snapshots in all-target mode, or live entities in reference mode. `target_count` counts the supplied observations. `detections.csv` uses the same controller-time timestamp; it has no terminal or initialization row.
 
 `scenario_parameter_overrides` records optional NCAP `Ego_speed_kph`, `GVT_init_speed_kph` and `isCCRbraking` overrides. A null value means no override was requested; esmini retains the source default. Overrides affect Init through the native parameter callback and derived expressions are re-evaluated before vehicles are initialized.
+
+In Markov mode, detected IDs come from native ObjectSensor before dropout. Dropped IDs are detected targets removed by Markov; supplied IDs are the remaining detections in native order. Non-visible objects never appear in those lists, although their chains continue advancing. In other modes dropped IDs are empty and supplied IDs equal detected IDs. `native_acc.csv/target_count` counts supplied targets. There is no logged zero-time initialization row; the first physical step follows the stationary initialization sample.

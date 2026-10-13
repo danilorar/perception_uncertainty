@@ -63,7 +63,11 @@ ObjectState state(int id) {
 
 EsminiAdapter::EsminiAdapter(const PreparedScenario& scenario, const std::filesystem::path& output,
                              const std::filesystem::path& resources, double dt, bool viewer,
-                             const ACCSIM_SensorConfig& sensor, const ScenarioOverrides& overrides) {
+                             const ACCSIM_SensorConfig& sensor, const ScenarioOverrides& overrides,
+                             const ACCSIM_MarkovConfig& markov) {
+    if (markov.enabled && std::abs(markov.period_s - dt) > 1e-9) {
+        throw std::invalid_argument("Markov period must equal simulation dt");
+    }
     // Build the arguments for the embedded esmini engine, not for acc_sim parsing.
     std::vector<std::string> options = {
         "acc_sim",
@@ -97,6 +101,7 @@ EsminiAdapter::EsminiAdapter(const PreparedScenario& scenario, const std::filesy
 
     // Register our controller names before esmini reads them from the scenario.
     checked(ACCSIM_ConfigureSensor(&sensor), "Invalid ideal sensor settings");
+    checked(ACCSIM_ConfigureMarkov(&markov), "Invalid Markov probability/duration/period");
     ACCSIM_RegisterPersistentAcc();
 
     // Load the generated scenario and initialize esmini. Zero means success.

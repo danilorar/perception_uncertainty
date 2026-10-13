@@ -1,5 +1,5 @@
 # Native ACC simulation
-The everyday entry point is [run_single_acc.ipynb](run_single_acc.ipynb). Python chooses settings and launches `acc_sim`; simulation and controller execution stay in C++. AEB and the custom movement path have been retired. Optional ideal detection uses esmini’s existing `ObjectSensor`. Markov/Gaussian uncertainty is not connected. Live animation is optional.
+The everyday entry point is [run_single_acc.ipynb](run_single_acc.ipynb). Python chooses settings and launches `acc_sim`; simulation and controller execution stay in C++. AEB and the custom movement path have been retired. Optional ideal detection uses esmini’s existing `ObjectSensor`. Optional persistent Markov dropout filters ideal detections. Gaussian is not connected. Live animation is optional.
 
 ## Build once, then use the notebook
 
@@ -9,14 +9,14 @@ From this directory:
 python3 tools/build_native.py
 ```
 
-Requires Git, a C++17 compiler, Python ≥3.9 and CMake ≥3.21. The first build needs network access. The build downloads esmini v3.8.1 commit `19d26b68f7f473de4e55046a794b5fd2f91c58c8` and fmt, verifies upstream ACC source is unchanged, and compiles the integration into esminiLib (headless by default). No root esmini submodule is required. Rebuild after C++ changes. The project bridge ABI is now **6**; rebuild older installations.
+Requires Git, a C++17 compiler, Python ≥3.9 and CMake ≥3.21. The first build needs network access. The build downloads esmini v3.8.1 commit `19d26b68f7f473de4e55046a794b5fd2f91c58c8` and fmt, verifies upstream ACC source is unchanged, and compiles the integration into esminiLib (headless by default). No root esmini submodule is required. Rebuild after C++ changes. The project bridge ABI is now **7**; rebuild older installations.
 
-Open the notebook, edit the first cell and run the cells in order:
+Open `run_single_acc.ipynb`, edit the settings cells and run the cells in order:
 
 1. Set `ACC_CPP_DIR` to this directory if the kernel starts elsewhere.
-2. Choose scenario, timestep, duration, time gap, optional cruise speed and stopping/logging settings. Leave `NATIVE_REFERENCE=False` for target copies. Choose `IDEAL_SENSOR_ENABLED=True` for sensor filtering and set the sensor mount, range and horizontal FOV in the first cell.
-3. Run the launch cell. It creates a unique directory under `results/` and calls `acc_sim` using `subprocess`.
-4. Run the final cell to load `results.csv`, `summary.json`, `run_config.json` and `detections.csv`.
+2. Choose scenario, timestep, duration, time gap, optional cruise speed and stopping/logging settings. Leave `NATIVE_REFERENCE=False` for target copies. Choose `IDEAL_SENSOR_ENABLED=True` for sensor filtering and set the sensor mount, range and horizontal FOV in the settings cells.
+3. Choose `MARKOV_SEEDS` (default `[10, 11, 12]`). The launch cell runs one ideal baseline and one Markov run per seed using `subprocess`. Each gets a subfolder inside a unique `results/acc_batch_*` directory. Use `MARKOV_SEEDS=[]` for only the ideal baseline.
+4. Load the saved results and summaries, then compare ego speed, actual gap and missed detections. Plots require `DETAILED_LOGS=True`; the target-speed line assumes target ID 1. Runs may end at different times.
 
 Linux/macOS binary: `build/runner/acc_sim`. On Windows, set the notebook's `BINARY_FILE` to `build/runner/Release/acc_sim.exe`.
 
@@ -45,7 +45,7 @@ The viewer changes rendering and wall-clock pacing only; ACC and the fixed simul
 | `src/controllers/acc.cpp` | Connect independent observations to persistent native ACC | Native ObjectSensor hits (or all targets) → copies, native ACC call, diagnostics |
 | Upstream `ControllerACC.cpp` | Native ACC algorithm and override ego movement | Real ego, target view and settings → speed and road position |
 | `src/metrics.cpp` | Truth-based safety measurements | World states → gap, TTC, distance and collision |
-| `src/perception.cpp` | Shared IID/Markov processing, retained for later connection | Observation frames → filtered frames; currently tested separately |
+| `src/perception.cpp` | Shared dropout mechanisms; Markov connected to ACC | Ideal detection IDs → retained IDs and dropped IDs |
 | `include/accsim/` | Shared types and scenario/engine/perception/metrics declarations | C++ interfaces |
 | `include/native_acc_bridge.h` | ACC registration, sensor configuration and diagnostic C boundary | Runner ↔ esminiLib |
 | `tools/build_native.py`, `tools/add_bridge.cmake` | Build pinned engine, integration, runner and tests | Source → local binaries and provenance |
@@ -84,9 +84,19 @@ One owned native `ObjectSensor` updates immediately before each ACC step. Its hi
 
 Defaults: mount `(0, 0, 0.5)` metres relative to ego, heading `0` radians, near/far range `0/100` metres, horizontal FOV `pi/3` radians (60 degrees). Settings and the update period (`dt`) are saved in `run_config.json`. The pinned implementation uses horizontal object-reference-point range/FOV, skips ghosts and sensor-invisible objects, and has no occlusion model. Its heading/FOV behaviour is reused unchanged; initial tests cover a forward-facing sensor. This is ideal detection, not a realistic camera/radar model.
 
+## Markov dropout
+
+The notebook runs Markov for each entry in `MARKOV_SEEDS`; keep `IDEAL_SENSOR_ENABLED=True` and `NATIVE_REFERENCE=False`. Choose `MARKOV_MISS_PROBABILITY` and `MARKOV_MEAN_MISSING_SECONDS`. The ideal baseline always sends zero dropout. Example CLI addition: `--perception markov --ideal-sensor true --dropout-p .1 --mean-missing-s .5 --seed 10`.
+
+Each persistent ACC owns one existing `MarkovDropout` instance, with an independent chain for every initial non-ego ID. All chains advance even outside sensor visibility; only ideal detections can be supplied or dropped. IDs and order are filtered before copying native target positions. New target IDs during a run are rejected rather than silently restarting chains. Real targets are never altered.
+
+The sensor/Markov period is the simulation timestep. Initialization at time zero samples the stationary missing state without a transition; repeated zero-time samples are cached. Every subsequent dt advances once. Probability must be in [0,1], mean missing duration at least dt, and transition probabilities valid. Missing periods are geometric, not fixed-length. p=0 is identity; p=1 is total dropout. The same seed reproduces results for identical run settings. Reference/all-target validation modes remain available; Markov requires sensor-filtered target-copy mode.
+
+`detections.csv` separates ideal `detected_target_ids`, Markov `dropped_target_ids` and `supplied_target_ids`. The supplied list equals the detected list minus dropped IDs, in original order. `native_acc.csv` target_count counts supplied targets. Settings and stationary initialization policy are recorded in `run_config.json`. Historical output files retain their older schemas.
+
 ## Settings and outputs
 
-The runner is ACC-only. `--controller acc` is accepted for explicit commands; AEB and its settings are rejected. Supported settings are `--ego-name` (default `object_1`), `--scenario`, `--output-dir`, `--config`, `--dt`, `--duration`, `--time-gap`, `--set-speed`, `--esmini-home`, `--native-reference`, `--stop-on-collision` `--detailed-logs` and `--viewer`. `--dropout-p` accepts only zero. Ideal sensing uses `--ideal-sensor true`, `--sensor-x-m`, `--sensor-y-m`, `--sensor-z-m`, `--sensor-heading-rad`, `--sensor-near-m`, `--sensor-far-m` and `--sensor-horizontal-fov-rad`. Markov settings remain unsupported. `--esmini-home` supplies optional resources, not a replacement engine library.
+The runner is ACC-only. `--controller acc` is accepted for explicit commands; AEB and its settings are rejected. Supported settings are `--ego-name` (default `object_1`), `--scenario`, `--output-dir`, `--config`, `--dt`, `--duration`, `--time-gap`, `--set-speed`, `--esmini-home`, `--native-reference`, `--stop-on-collision` `--detailed-logs` and `--viewer`. `--perception ideal|markov` selects the observation model (default ideal). Nonzero `--dropout-p` requires Markov. Ideal sensing uses `--ideal-sensor true`, `--sensor-x-m`, `--sensor-y-m`, `--sensor-z-m`, `--sensor-heading-rad`, `--sensor-near-m`, `--sensor-far-m` and `--sensor-horizontal-fov-rad`. Markov accepts `--mean-missing-s` (default 0.5 s) and `--seed` (default 0). `--esmini-home` supplies optional resources, not a replacement engine library.
 
 Defaults: `dt=0.01 s`, duration `10 s`, time gap `1.5 s`, cruise speed from the scenario's initial ego speed, stop on collision enabled, detailed logs disabled. Duration must be an integer multiple of `dt`. Config paths are relative to the config file; CLI paths are relative to the current directory. Output directories must be new or empty. `configs/ideal.ini` remains a valid optional ACC configuration.
 
@@ -94,9 +104,9 @@ Each run writes:
 
 - `results.csv`: boundary ego truth, progress and truth safety metrics. Recorded inputs use reference-path projection; action-based inputs use accumulated planar ego travel. `progress_source` in run_config identifies the definition.
 - `native_acc.csv`: controller-time input speed, post-step ego speed/position, selected lead, supplied target count and diagnostic gap.
-- `detections.csv`: one row per ACC step with step, controller time, observation mode and a JSON list of detected target IDs (including empty lists).
+- `detections.csv`: one row per ACC step with step, controller time, observation mode and JSON lists of detected, dropped and supplied target IDs (including empty lists).
 - `summary.json`: collision, safety, deceleration and final-speed outcomes.
-- `run_config.json`: resolved settings, source fingerprints and pinned engine identity (schema 6).
+- `run_config.json`: resolved settings, source fingerprints and pinned engine identity (schema 7).
 - `generated/`: prepared XOSC and road snapshot; `run.log` and `sim.dat`: esmini logs/recording.
 - With detailed logs: `truth.csv` and `metrics.csv`.
 
@@ -111,7 +121,7 @@ python3 tools/compare_native_acc.py --output-dir results/native_acc_identity
 
 Choose a new comparison directory each time. On Windows also pass `--binary build/runner/Release/acc_sim.exe` and use `ctest -C Release`.
 
-Sensor fixtures additionally check near/far range, rear/FOV exclusion, detection order, current-step timing and all-visible speed/position/selection identity. Seven CTests cover persistent ACC, shared perception, Markov, metrics and preparation of three supplied scenarios. ACC fixtures check cruise across steps, following calculations, nearest-target selection, rear/lateral/lookahead exclusion, bounding-box offsets/headings, speed/deceleration limits, close-gap stopping and native movement. The NCAP test additionally verifies catalog initialization, native cruise capture at time zero, parameter re-evaluation, moving/stationary/braking target setups, exact copy/ideal/reference identity, and callback cleanup after successful and failed runs. The comparison runs three scenarios with three setting combinations and requires byte-identical native diagnostics, truth, results and summaries between copy and reference modes.
+Sensor fixtures additionally check near/far range, rear/FOV exclusion, detection order, current-step timing and all-visible speed/position/selection identity. Seven CTests cover persistent ACC, shared perception, Markov, metrics and preparation of three supplied scenarios. ACC fixtures check cruise across steps, following calculations, nearest-target selection, rear/lateral/lookahead exclusion, bounding-box offsets/headings, speed/deceleration limits, close-gap stopping and native movement. The NCAP test additionally verifies catalog initialization, native cruise capture at time zero, parameter re-evaluation, moving/stationary/braking target setups, exact copy/ideal/reference identity, and callback cleanup after successful and failed runs. Persistent Markov integration tests additionally verify p=0 identity, p=1 exclusion, same-seed reproduction, recovery, zero-time caching, per-timestep updates and unchanged target truth. The comparison runs three scenarios with three setting combinations and requires byte-identical native diagnostics, truth, results and summaries between copy and reference modes.
 
 The obsolete ACC packet wrapper, AEB bridges/test and custom movement code were removed. The dropout comparison, Markov sensitivity and perception replay tools were removed because their workflows require the retired path. The historical batch exporter was also removed because no supported ACC workflow uses it. [Reports](reports/README.md) may contain historical commands that no longer exist.
 

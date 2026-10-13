@@ -11,7 +11,7 @@ Simplify the existing pipeline while preserving its behavior.
 
 **Current ACC flow:** `run_single_acc.ipynb` → `acc_sim` → scenario preparation → esmini stepping → `src/controllers/acc.cpp` → native ACC and movement → saved results. See the [current file map](experiments/esmini-perception/simulation/acc_cpp/README.md).
 
-AEB/custom movement and their interfaces/tests are removed. Shared perception/Markov and metrics remain. Sensor/uncertainty integration is paused. Optional native live animation is available through the notebook viewer setting. Build tools and native comparison remain; dropout batches, perception replay and their historical report exporter are retired.
+AEB/custom movement and their interfaces/tests are removed. Shared perception/Markov and metrics remain. Ideal sensing and persistent Markov dropout are connected; Gaussian remains paused. Optional native live animation is available through the notebook viewer setting. Build tools and native comparison remain; dropout batches, perception replay and their historical report exporter are retired.
 
 ## Working rules
 
@@ -32,11 +32,11 @@ AEB/custom movement and their interfaces/tests are removed. Shared perception/Ma
 
 ## Current state
 
-- ACC-only runner, bridge ABI 6 and output schema 6; rebuild older libraries.
+- ACC-only runner, bridge ABI 7 and output schema 7; rebuild older libraries.
 - Logging remains in `main.cpp`; `results.csv` is boundary truth, `native_acc.csv` is controller diagnostics, and detailed mode adds truth/metrics CSVs.
 - Seven CTests cover persistent ACC, shared perception/Markov/metrics and three scenario fixtures. Native comparison checks three scenarios × three settings.
 - Notebook is the everyday entry point. Historical reports and local results remain intact.
-- Optional native ObjectSensor detection is connected before each ACC step; notebook settings and detected-ID logs are available. All-target/reference baselines remain. Markov/Gaussian are not connected. Optional native live animation is supported. No commit requested.
+- Optional native ObjectSensor detection is connected before each ACC step; notebook settings and detected-ID logs are available. All-target/reference baselines remain. Persistent Markov filters ideal detections; logs separate detected, dropped and supplied IDs. Gaussian is not connected. Optional native live animation is supported. No commit requested.
 
 ## Validation
 

@@ -22,6 +22,16 @@ typedef struct {
     double near_m, far_m, horizontal_fov_rad;
 } ACCSIM_SensorConfig;
 ACCSIM_API int ACCSIM_ConfigureSensor(const ACCSIM_SensorConfig* config);
+// Markov state is owned by each persistent controller. period_s equals simulation dt.
+typedef struct {
+    int enabled;
+    double probability, mean_missing_s, period_s;
+    unsigned long long seed;
+} ACCSIM_MarkovConfig;
+ACCSIM_API int ACCSIM_ConfigureMarkov(const ACCSIM_MarkovConfig* config);
+// ID getters: nullptr with capacity 0 queries count; -1 indicates invalid/short buffer.
+ACCSIM_API int ACCSIM_GetDroppedTargetIds(int* ids, int capacity);
+ACCSIM_API int ACCSIM_GetSuppliedTargetIds(int* ids, int capacity);
 // Copy the last controller-time detected IDs; returns count, or -1 for insufficient capacity.
 ACCSIM_API int ACCSIM_GetDetectedTargetIds(int* ids, int capacity);
 // Captured before native ACC activation modifies ego speed or heading.

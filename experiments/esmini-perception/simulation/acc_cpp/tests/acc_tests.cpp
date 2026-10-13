@@ -2,8 +2,10 @@
 // Exercise the production persistent ACC through XOSC initialization and SE_StepDT.
 // Exceptions keep every check active in Release builds.
 #include "accsim/engine.hpp"
+#include "accsim/perception.hpp"
 #include "native_acc_bridge.h"
 #include "pugixml.hpp"
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -103,16 +105,141 @@ ACCSIM_PersistentAccOutput advance(accsim::EsminiAdapter& engine) {
     return output;
 }
 
+std::vector<int> diagnostic_ids(int (*getter)(int*, int)) {
+    const int count = getter(nullptr, 0);
+    require(count >= 0, "ID diagnostics available");
+    std::vector<int> ids(static_cast<std::size_t>(count));
+    require(getter(ids.data(), count) == count, "ID diagnostics copied");
+    return ids;
+}
+
+void check_markov(const std::filesystem::path& root) {
+    std::vector<accsim::WorldTruthFrame> ideal_worlds;
+    std::vector<ACCSIM_PersistentAccOutput> ideal_outputs;
+    std::vector<std::vector<int>> seeded_supplied;
+    for (int run = 0; run < 5; ++run) {
+        const auto directory = root / ("markov_" + std::to_string(run));
+        const auto scene = fixture(directory, 10, 20, {{25, 8}, {45, 8}, {-25, 8}});
+        const double probability = run == 4 ? 1 : (run >= 2 ? .35 : 0);
+        const ACCSIM_SensorConfig sensor{1, 0, 0, .5, 0, 0, 60, accsim::pi / 3};
+        const ACCSIM_MarkovConfig config{run != 0, probability, .2, dt, 19};
+        accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor, {}, config);
+        // Repeating zero-time initialization must not create extra transitions.
+        engine.advance_native(0);
+        engine.advance_native(0);
+        accsim::MarkovDropout expected(probability, .2, dt, 19, {1, 2, 3});
+        accsim::PerceptionFrame frame;
+        expected.apply(frame); // Stationary initialization at t=0, no transition.
+        bool saw_missing = false;
+        bool saw_recovery = false;
+        for (int step = 0; step < 500; ++step) {
+            const auto output = advance(engine);
+            const auto world = engine.truth();
+            const auto detected = diagnostic_ids(ACCSIM_GetDetectedTargetIds);
+            const auto dropped = diagnostic_ids(ACCSIM_GetDroppedTargetIds);
+            const auto supplied = diagnostic_ids(ACCSIM_GetSuppliedTargetIds);
+            require(output.target_count == static_cast<int>(supplied.size()), "ACC receives only supplied targets");
+            require(output.lead_id < 0 || std::find(supplied.begin(), supplied.end(), output.lead_id) != supplied.end(),
+                    "ACC cannot select a dropped target");
+            frame.sequence = step + 1;
+            frame.measurement_time_s = frame.delivery_time_s = output.time_s;
+            frame.objects.clear();
+            for (int id : detected) {
+                accsim::Observation object;
+                object.track_id = id;
+                frame.objects.push_back(object);
+            }
+            const auto filtered = expected.apply(frame);
+            if (run != 0) {
+                std::vector<int> expected_supplied;
+                for (const auto& object : filtered.frame.objects) {
+                    expected_supplied.push_back(object.track_id);
+                }
+                require(dropped == filtered.dropped_ids && supplied == expected_supplied,
+                        "Exactly one Markov update per timestep, including hidden-target chains");
+            }
+            if (std::find(dropped.begin(), dropped.end(), 1) != dropped.end()) {
+                saw_missing = true;
+            }
+            if (saw_missing && std::find(supplied.begin(), supplied.end(), 1) != supplied.end()) {
+                saw_recovery = true;
+            }
+            if (run == 0) {
+                ideal_worlds.push_back(world);
+                ideal_outputs.push_back(output);
+            } else {
+                // No dropout operation may mutate the actual target trajectories.
+                for (std::size_t i = 0; i < world.targets.size(); ++i) {
+                    near(world.targets[i].pose.x, ideal_worlds[step].targets[i].pose.x, "Target truth untouched", 0);
+                    near(world.targets[i].speed, ideal_worlds[step].targets[i].speed, "Target speed untouched", 0);
+                }
+            }
+            if (run == 1) {
+                near(world.ego.speed, ideal_worlds[step].ego.speed, "Zero dropout ego speed identity", 0);
+                near(world.ego.pose.x, ideal_worlds[step].ego.pose.x, "Zero dropout ego position identity", 0);
+                require(output.lead_id == ideal_outputs[step].lead_id && dropped.empty() && supplied == detected,
+                        "Zero dropout selection and observations identity");
+            }
+            if (run == 2) {
+                seeded_supplied.push_back(supplied);
+            }
+            if (run == 3) {
+                require(supplied == seeded_supplied[step], "Same seed repeats the observation sequence");
+            }
+            if (run == 4) {
+                require(supplied.empty() && dropped == detected && output.lead_id == -1,
+                        "Full dropout supplies no targets and invents no observations");
+            }
+        }
+        if (run == 2 || run == 3) {
+            require(saw_missing && saw_recovery, "Missing target returns during seeded run");
+        }
+    }
+    // A target enters sensor range on the second step. Its chain must already
+    // have advanced while hidden, and no hidden observation may be invented.
+    const auto directory = root / "markov_sensor_entry";
+    const auto scene = fixture(directory, 0, 0, {{60.15, 10, 0, 0, accsim::pi}});
+    const ACCSIM_SensorConfig sensor{1, 0, 0, .5, 0, 0, 60, accsim::pi / 3};
+    const ACCSIM_MarkovConfig config{1, .35, .02, dt, 19};
+    accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor, {}, config);
+    accsim::MarkovDropout expected(.35, .02, dt, 19, {1});
+    accsim::PerceptionFrame frame;
+    expected.apply(frame);
+    for (int step = 1; step <= 20; ++step) {
+        const auto output = advance(engine);
+        const auto detected = diagnostic_ids(ACCSIM_GetDetectedTargetIds);
+        if (step == 1) {
+            require(detected.empty(), "Target starts outside ideal range");
+        } else {
+            require(detected == std::vector<int>{1}, "Target becomes visible on current sensor update");
+        }
+        frame.sequence = step;
+        frame.measurement_time_s = frame.delivery_time_s = output.time_s;
+        frame.objects.clear();
+        for (int id : detected) {
+            accsim::Observation observation;
+            observation.track_id = id;
+            frame.objects.push_back(observation);
+        }
+        const auto filtered = expected.apply(frame);
+        require(diagnostic_ids(ACCSIM_GetDroppedTargetIds) == filtered.dropped_ids,
+                "Visibility changes do not restart or pause Markov chains");
+        require(output.target_count == static_cast<int>(filtered.frame.objects.size()),
+                "Only visible and retained targets reach ACC");
+    }
+}
+
 void check_action_scenario(const std::filesystem::path& source, const std::filesystem::path& root) {
     std::vector<accsim::WorldTruthFrame> baseline;
     std::vector<int> leads;
-    for (int mode = 0; mode < 3; ++mode) {
+    for (int mode = 0; mode < 4; ++mode) {
         const auto directory = root / ("actions_" + std::to_string(mode));
         const auto scene = accsim::prepare_scenario(source, directory / "generated.xosc", "Ego",
                                                     accsim::AccConfig{1.5, -1}, mode == 2);
         require(scene.reference.vertices.empty(), "Action scenario must not invent a reference trajectory");
-        const ACCSIM_SensorConfig sensor{mode == 1, 0, 0, .5, 0, 0, 100, accsim::pi};
-        accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor);
+        const ACCSIM_SensorConfig sensor{mode == 1 || mode == 3, 0, 0, .5, 0, 0, 100, accsim::pi};
+        const ACCSIM_MarkovConfig markov{mode == 3, 0, .2, dt, 19};
+        accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor, {}, markov);
         ACCSIM_AccInitialization init{};
         require(ACCSIM_GetAccInitialization(&init) == 0, "Native initialization available");
         near(init.initial_speed_mps, 20.0 / 3.6, "Parameter-derived ego speed", 1e-6);
@@ -148,12 +275,13 @@ void check_action_scenario(const std::filesystem::path& source, const std::files
         overrides.target_braking = setup == "CCRb";
         baseline.clear();
         leads.clear();
-        for (int mode = 0; mode < 3; ++mode) {
+        for (int mode = 0; mode < 4; ++mode) {
             const auto directory = root / (setup + "_" + std::to_string(mode));
             const auto scene = accsim::prepare_scenario(source, directory / "generated.xosc", "Ego",
                                                         accsim::AccConfig{1.5, -1}, mode == 2);
-            const ACCSIM_SensorConfig sensor{mode == 1, 0, 0, .5, 0, 0, 100, accsim::pi};
-            accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor, overrides);
+            const ACCSIM_SensorConfig sensor{mode == 1 || mode == 3, 0, 0, .5, 0, 0, 100, accsim::pi};
+            const ACCSIM_MarkovConfig markov{mode == 3, 0, .2, dt, 19};
+            accsim::EsminiAdapter engine(scene, directory, {}, dt, false, sensor, overrides, markov);
             ACCSIM_AccInitialization init{};
             require(ACCSIM_GetAccInitialization(&init) == 0, "Overridden initialization available");
             near(init.initial_speed_mps, 50.0 / 3.6, "Derived ego speed is re-evaluated", 1e-6);
@@ -413,6 +541,8 @@ int main(int argc, char** argv) {
                 }
             }
         }
+
+        check_markov(root);
 
         // Several consecutive steps detect accidental controller reconstruction:
         // cruise must keep its original set speed, not reset it to each ego speed.

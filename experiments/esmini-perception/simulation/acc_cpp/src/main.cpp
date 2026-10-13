@@ -48,8 +48,9 @@ struct Options {
     // Optional esmini ObjectSensor; disabled keeps the all-target baseline.
     ACCSIM_SensorConfig sensor{0, 0, 0, 0.5, 0, 0, 100, pi / 3};
 
-    // Uncertainty is not connected; only zero dropout is accepted.
-    double dropout_p = 0;
+    // Perception: ideal detections, optionally filtered by persistent Markov dropout.
+    std::string perception = "ideal";
+    ACCSIM_MarkovConfig markov{0, 0, 0.5, 0.01, 0};
 
     // Output: enable the additional per-step audit CSVs.
     bool detailed_logs = false;
@@ -160,7 +161,8 @@ void read_command_line(int argc, char** argv, std::map<std::string, std::string>
                 << "  --ideal-sensor true|false (default false: all targets)\n"
                 << "  --sensor-x-m 0 --sensor-y-m 0 --sensor-z-m .5 --sensor-heading-rad 0\n"
                 << "  --sensor-near-m 0 --sensor-far-m 100 --sensor-horizontal-fov-rad 1.0471975512\n"
-                << "ACC-only simulation; uncertainty is not connected yet.\n";
+                << "  --perception ideal|markov --dropout-p 0 --mean-missing-s .5 --seed 0\n"
+                << "Markov requires --ideal-sensor true and target-copy mode.\n";
             std::exit(0);
         }
         if (key.rfind("--", 0) != 0 || i + 1 >= argc) {
@@ -186,7 +188,8 @@ Options populate_options(const std::map<std::string, std::string>& values) {
         "time-gap", "set-speed", "controller", "ego-name", "stop-on-collision", "detailed-logs", "native-reference", "viewer",
         "ideal-sensor", "sensor-x-m", "sensor-y-m", "sensor-z-m", "sensor-heading-rad",
         "sensor-near-m", "sensor-far-m", "sensor-horizontal-fov-rad",
-        "ego-speed-kph", "target-speed-kph", "target-braking"};
+        "ego-speed-kph", "target-speed-kph", "target-braking",
+        "perception", "mean-missing-s", "seed"};
     for (const auto& entry : values) {
         if (std::find(known.begin(), known.end(), entry.first) == known.end()) {
             throw std::invalid_argument("Unknown option: " + entry.first);
@@ -224,7 +227,7 @@ Options populate_options(const std::map<std::string, std::string>& values) {
 
     assign_number(values, "dt", options.dt);
     assign_number(values, "duration", options.duration);
-    assign_number(values, "dropout-p", options.dropout_p);
+    assign_number(values, "dropout-p", options.markov.probability);
     assign_number(values, "time-gap", options.time_gap);
     assign_number(values, "set-speed", options.set_speed);
     assign_boolean(values, "stop-on-collision", options.stop_on_collision);
@@ -241,6 +244,19 @@ Options populate_options(const std::map<std::string, std::string>& values) {
     assign_number(values, "sensor-near-m", options.sensor.near_m);
     assign_number(values, "sensor-far-m", options.sensor.far_m);
     assign_number(values, "sensor-horizontal-fov-rad", options.sensor.horizontal_fov_rad);
+    if (values.count("perception")) {
+        options.perception = values.at("perception");
+    }
+    options.markov.enabled = options.perception == "markov";
+    options.markov.period_s = options.dt;
+    assign_number(values, "mean-missing-s", options.markov.mean_missing_s);
+    if (values.count("seed")) {
+        const auto& seed = values.at("seed");
+        if (seed.empty() || seed.find_first_not_of("0123456789") != std::string::npos) {
+            throw std::invalid_argument("seed must be a nonnegative integer");
+        }
+        options.markov.seed = std::stoull(seed);
+    }
     return options;
 }
 
@@ -265,9 +281,17 @@ void validate_options(const Options& options) {
          options.sensor.horizontal_fov_rad <= 0 || options.sensor.horizontal_fov_rad > 2 * pi)) {
         throw std::invalid_argument("Sensor requires 0 <= near < far and 0 < horizontal FOV <= 2*pi");
     }
-    if (options.dropout_p != 0) {
-        throw std::invalid_argument(
-            "Persistent ACC currently requires dropout-p 0; uncertainty is not connected yet");
+    if (options.perception != "ideal" && options.perception != "markov") {
+        throw std::invalid_argument("perception must be ideal or markov");
+    }
+    if (options.markov.enabled && (!options.sensor.enabled || options.native_reference)) {
+        throw std::invalid_argument("Markov requires ideal-sensor true and native-reference false");
+    }
+    if (!options.markov.enabled && options.markov.probability != 0) {
+        throw std::invalid_argument("Nonzero dropout-p requires perception markov");
+    }
+    if (ACCSIM_ConfigureMarkov(&options.markov) != 0) {
+        throw std::invalid_argument("Invalid Markov probability/duration: require p in [0,1], mean-missing >= dt, and valid transition rates");
     }
     if (options.dt <= 0 || options.dt > 0.1 || options.duration <= 0 || options.time_gap <= 0 ||
         options.set_speed < -1) {
@@ -388,7 +412,7 @@ std::string fingerprint(const fs::path& path) {
 void write_config(const Options& o, const PreparedScenario& scene, const AccConfig& acc, double initial_speed) {
     auto file = open(o.output / "run_config.json");
     const auto& overrides = o.scenario_overrides;
-    file << "{\n  \"schema_version\": 6,\n"
+    file << "{\n  \"schema_version\": 7,\n"
          << "  \"controller\": \"esmini::ControllerACC::Step\",\n"
          << "  \"esmini_tag\": \"v3.8.1\",\n"
          << "  \"esmini_commit\": \"19d26b68f7f473de4e55046a794b5fd2f91c58c8\",\n"
@@ -402,6 +426,11 @@ void write_config(const Options& o, const PreparedScenario& scene, const AccConf
          << json(o.native_reference ? "live native entities" :
                  (o.sensor.enabled ? "ObjectSensor detections copied in scenario order" :
                                      "native-position copies in scenario order")) << ",\n"
+         << "  \"perception\": " << json(o.perception) << ",\n"
+         << "  \"dropout_probability\": " << o.markov.probability << ",\n"
+         << "  \"mean_missing_s\": " << o.markov.mean_missing_s << ",\n"
+         << "  \"perception_seed\": " << o.markov.seed << ",\n"
+         << "  \"markov_initialization\": " << json("stationary at first controller sample; repeated zero-time samples cached") << ",\n"
          << "  \"ideal_sensor\": " << (o.sensor.enabled ? "true" : "false") << ",\n"
          << "  \"sensor_x_m\": " << o.sensor.x_m << ",\n"
          << "  \"sensor_y_m\": " << o.sensor.y_m << ",\n"
@@ -475,6 +504,30 @@ void write_finite(std::ofstream& file, double value) {
     if (std::isfinite(value)) {
         file << value;
     }
+}
+
+// Query variable-length ID lists independently of ACC's supplied-target count.
+std::vector<int> read_ids(int (*getter)(int*, int)) {
+    const int count = getter(nullptr, 0);
+    if (count < 0) {
+        throw std::runtime_error("Missing perception diagnostics");
+    }
+    std::vector<int> ids(static_cast<std::size_t>(count));
+    if (getter(ids.data(), count) != count) {
+        throw std::runtime_error("Invalid perception diagnostics");
+    }
+    return ids;
+}
+
+void write_ids(std::ofstream& file, const std::vector<int>& ids) {
+    file << "\"[";
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+        if (i > 0) {
+            file << ',';
+        }
+        file << ids[i];
+    }
+    file << "]\"";
 }
 
 // Boundary truth only; controller-time diagnostics belong to native_acc.csv.
@@ -559,7 +612,8 @@ int run(const Options& options) {
         options.dt,
         options.viewer,
         options.sensor,
-        options.scenario_overrides);
+        options.scenario_overrides,
+        options.markov);
 
     // Read parameters and catalog limits resolved by native initialization, at t=0.
     ACCSIM_AccInitialization initialization{};
@@ -577,7 +631,7 @@ int run(const Options& options) {
 
     // One row per executed ACC step, including an empty list when nothing is detected.
     auto detection_log = open(options.output / "detections.csv");
-    detection_log << "step,controller_time_s,observation_mode,detected_target_ids\n";
+    detection_log << "step,controller_time_s,observation_mode,detected_target_ids,dropped_target_ids,supplied_target_ids\n";
 
     // Open results.csv and, when requested, the detailed audit CSVs.
     auto logs = open_run_logs(options.output, options.detailed_logs);
@@ -685,22 +739,22 @@ int run(const Options& options) {
             throw std::runtime_error("Missing native ACC diagnostics");
         }
 
-        std::vector<int> detected_ids(static_cast<std::size_t>(native.target_count));
-        const int detected_count = ACCSIM_GetDetectedTargetIds(
-            detected_ids.data(), static_cast<int>(detected_ids.size()));
-        if (detected_count < 0) {
-            throw std::runtime_error("Missing detected target IDs");
+        const auto detected_ids = read_ids(ACCSIM_GetDetectedTargetIds);
+        const auto dropped_ids = read_ids(ACCSIM_GetDroppedTargetIds);
+        const auto supplied_ids = read_ids(ACCSIM_GetSuppliedTargetIds);
+        if (static_cast<int>(supplied_ids.size()) != native.target_count) {
+            throw std::runtime_error("ACC target count disagrees with supplied observations");
         }
         detection_log << step << ',' << native.time_s << ','
                       << (options.native_reference ? "reference" :
-                          (options.sensor.enabled ? "ideal" : "all-targets")) << ",\"[";
-        for (int i = 0; i < detected_count; ++i) {
-            if (i > 0) {
-                detection_log << ',';
-            }
-            detection_log << detected_ids[i];
-        }
-        detection_log << "]\"\n";
+                          (options.markov.enabled ? "markov" :
+                           (options.sensor.enabled ? "ideal" : "all-targets"))) << ',';
+        write_ids(detection_log, detected_ids);
+        detection_log << ',';
+        write_ids(detection_log, dropped_ids);
+        detection_log << ',';
+        write_ids(detection_log, supplied_ids);
+        detection_log << '\n';
 
         // Save post-step truth beside the ACC diagnostics.
         native_log << native.time_s << ',' << native.input_speed_mps << ',' << next.ego.speed << ','

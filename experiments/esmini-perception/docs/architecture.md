@@ -10,11 +10,13 @@ The integration connects observations to native ACC; it does not implement the a
 
 The scenario preparer retains original target trajectories and initial conditions, removes ego's timed trajectory and assigns `PerceptionACC` (or `ReferenceACC`). Recorded inputs contain two explicit vehicles and flat, near-parallel forward WorldPosition trajectories. Action-based base XOSC inputs can instead use catalog vehicles and native Init speed/position actions. Ego is selected by name; native ACC captures initialized speed when cruise speed is omitted. Target actions and native stop conditions remain. Later ego maneuver groups are rejected rather than silently competing with ACC. Parameter-distribution variation files are not yet supported. Optional NCAP speed/braking overrides pass through the adapter’s native parameter-declaration callback; esmini re-evaluates dependent expressions before Init and the callback is cleared before returning from initialization. There is no general controller plugin framework.
 
-`perception.cpp` and its IID/Markov types/tests are shared code preserved for a later connection. They are not invoked by the ACC run loop. Ideal sensing is connected directly in `controllers/acc.cpp` using upstream `ObjectSensor::Update()` once per ACC timestep. Markov and Gaussian integration remain paused. Optional live rendering uses the same native stepping path; it changes wall-clock pacing only. Nonzero ACC dropout is rejected. Sensor settings pass from main through the adapter before engine initialization; detected IDs are logged by main in `detections.csv`.
+`perception.cpp` provides the existing Markov implementation, compiled into esminiLib alongside the ACC integration. `controllers/acc.cpp` updates native ObjectSensor, filters its detected IDs through one persistent per-run Markov instance, then supplies native-position copies of retained targets. Each initial non-ego ID has an independent chain, advancing at dt even outside visibility; new IDs are rejected. No observation states are reconstructed from world coordinates. Reference and all-target modes remain available; Markov requires ideal sensing and target-copy mode. Gaussian remains paused.
+
+Initialization at t=0 samples stationary states without a transition. Repeated zero-time calls reuse the cached frame; later physical steps advance once per dt. Logging consumes captured IDs without advancing random state. Optional live rendering changes wall-clock pacing only. `detections.csv` logs ideal-detected, dropped and supplied IDs separately.
 
 Collision uses truth oriented 2D boxes with height overlap, checked against engine flags each step. Distance is box-surface distance; gap is projected along ego heading; TTC is gap/closing speed for an approaching in-path target. These metrics do not feed ACC.
 
-The following describes the retained, separately tested Markov component, not active ACC behaviour.
+The following describes the shared Markov component now used by persistent ACC. IID remains separately tested and is not exposed by this runner.
 
 ## 两状态 Markov 原理 / Two-state Markov model
 
