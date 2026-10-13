@@ -145,9 +145,71 @@ void check_reference(const ReferencePath& reference) {
         throw std::runtime_error("ReferencePath requires at least two vertices");
     }
 }
-// =================================================================
-// ===================== ACTION-BASED SCENARIOS =====================
-// =================================================================
+// =====================================================================
+// ===================== VALIDATE MANEUVER CATALOG =====================
+// =====================================================================
+// Inspect referenced maneuver XML only to validate supported action types.
+// esmini still resolves parameters and executes the catalog; we do not expand it.
+void validate_maneuver_catalog(pugi::xml_node root, pugi::xml_node reference) {
+    const std::string catalog_name = reference.attribute("catalogName").value();
+    const std::string entry_name = reference.attribute("entryName").value();
+    if (catalog_name.empty() || entry_name.empty() ||
+        catalog_name.find_first_of("$/\\") != std::string::npos ||
+        entry_name.find('$') != std::string::npos) {
+        unsupported("maneuver catalog and entry names must be explicit literals");
+    }
+
+    // Require one unambiguous file in the declared directories. Do not guess
+    // esmini's fallback resource paths or accept a different file with the same name.
+    fs::path catalog_file;
+    for (auto selected : root.select_nodes("./CatalogLocations/*/Directory")) {
+        const fs::path candidate = fs::path(selected.node().attribute("path").value()) /
+                                   (catalog_name + ".xosc");
+        if (fs::is_regular_file(candidate)) {
+            const auto resolved = fs::canonical(candidate);
+            if (!catalog_file.empty() && catalog_file != resolved) {
+                unsupported("ambiguous maneuver catalog: " + catalog_name);
+            }
+            catalog_file = resolved;
+        }
+    }
+    if (catalog_file.empty()) {
+        unsupported("cannot find maneuver catalog in declared directories: " + catalog_name);
+    }
+    pugi::xml_document document;
+    if (!document.load_file(catalog_file.c_str())) {
+        unsupported("cannot read maneuver catalog: " + catalog_file.string());
+    }
+    pugi::xml_node entry;
+    for (auto maneuver : document.child("OpenSCENARIO").child("Catalog").children("Maneuver")) {
+        if (std::string(maneuver.attribute("name").value()) == entry_name) {
+            if (entry) {
+                unsupported("duplicate maneuver catalog entry: " + entry_name);
+            }
+            entry = maneuver;
+        }
+    }
+    if (!entry) {
+        unsupported("missing maneuver catalog entry: " + entry_name);
+    }
+    if (entry.select_node(".//CatalogReference")) {
+        unsupported("nested maneuver catalog references require explicit review: " + entry_name);
+    }
+    // Only observer maneuvers that set variables are currently supported.
+    // In particular, an actor-free group can still contain global entity actions.
+    for (auto selected : entry.select_nodes(".//Action")) {
+        auto action = selected.node();
+        auto global = action.child("GlobalAction");
+        auto variable = global.child("VariableAction");
+        auto set = variable.child("SetAction");
+        if (!global || global != action.first_child() || global.next_sibling() ||
+            !variable || variable != global.first_child() || variable.next_sibling() ||
+            !set || set != variable.first_child() || set.next_sibling()) {
+            unsupported("maneuver catalog supports only VariableAction/SetAction observers: " + entry_name);
+        }
+    }
+}
+
 // esmini resolves vehicle catalogs, parameter expressions and Init positions.
 // This path preserves target actions instead of requiring timed trajectories.
 PreparedScenario prepare_actions(pugi::xml_document& document, PreparedScenario result,
@@ -193,7 +255,7 @@ PreparedScenario prepare_actions(pugi::xml_document& document, PreparedScenario 
     }
 
     // Reject competing ego motion, including unresolved catalog maneuvers on ego.
-    // Observer catalogs with no actors cannot issue private vehicle actions.
+    // Referenced catalogs are checked separately below, including actor-free groups.
     for (auto selected : root.select_nodes("./Storyboard/Story/Act/ManeuverGroup")) {
         auto group = selected.node();
         if (group.child("Actors").attribute("selectTriggeringEntities").as_bool()) {
@@ -233,6 +295,13 @@ PreparedScenario prepare_actions(pugi::xml_document& document, PreparedScenario 
     for (auto selected : root.select_nodes("./CatalogLocations/*/Directory")) {
         auto directory = selected.node();
         directory.attribute("path") = resolve(directory.attribute("path").value()).string().c_str();
+    }
+    for (auto selected : root.select_nodes("./Storyboard/Story/Act/ManeuverGroup//CatalogReference")) {
+        auto reference = selected.node();
+        if (std::string(reference.parent().name()) != "ManeuverGroup") {
+            unsupported("nested storyboard catalog references require explicit review");
+        }
+        validate_maneuver_catalog(root, reference);
     }
     for (auto selected : root.select_nodes("./RoadNetwork/SceneGraphFile")) {
         auto scene = selected.node();

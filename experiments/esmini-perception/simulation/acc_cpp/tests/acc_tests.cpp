@@ -194,6 +194,82 @@ void check_action_scenario(const std::filesystem::path& source, const std::files
         near(engine.truth().ego.speed, 20.0 / 3.6, "Default ego speed restored", 1e-6);
         near(engine.truth().targets[0].speed, 20.0 / 3.6, "Default target speed restored", 1e-6);
     }
+    // Validate external maneuver contents, not just the main scenario XML.
+    const auto catalog_directory = root / "catalog_validation";
+    std::filesystem::create_directories(catalog_directory);
+    pugi::xml_document fixture_xml;
+    require(fixture_xml.load_file(source.c_str()), "Load catalog validation source");
+    for (auto selected : fixture_xml.select_nodes("//CatalogLocations/*/Directory")) {
+        auto directory = selected.node();
+        const auto path = std::filesystem::canonical(source.parent_path() / directory.attribute("path").value());
+        directory.attribute("path") = path.string().c_str();
+    }
+    auto maneuver_directory = fixture_xml.select_node("//CatalogLocations/ManeuverCatalog/Directory").node();
+    const auto original_catalog = std::filesystem::path(maneuver_directory.attribute("path").value()) /
+                                  "ManeuverCatalog.xosc";
+    maneuver_directory.attribute("path") = catalog_directory.string().c_str();
+    auto road = fixture_xml.select_node("//RoadNetwork/LogicFile").node();
+    road.attribute("filepath") = std::filesystem::canonical(source.parent_path() /
+                                                           road.attribute("filepath").value()).string().c_str();
+    const auto catalog_source = catalog_directory / "source.xosc";
+    require(fixture_xml.save_file(catalog_source.c_str()), "Save catalog validation source");
+    const auto check_catalog = [&](pugi::xml_document& catalog, const std::string& expected_error) {
+        require(catalog.save_file((catalog_directory / "ManeuverCatalog.xosc").c_str()), "Save catalog fixture");
+        std::string error;
+        try {
+            accsim::prepare_scenario(catalog_source, catalog_directory / "generated.xosc", "Ego");
+        } catch (const std::exception& exception) {
+            error = exception.what();
+        }
+        require(expected_error.empty() ? error.empty() : error.find(expected_error) != std::string::npos,
+                "Expected catalog validation outcome: " + expected_error + "; got: " + error);
+    };
+    pugi::xml_document catalog;
+    require(catalog.load_file(original_catalog.c_str()), "Load original observer catalog");
+    check_catalog(catalog, ""); // Existing NCAP variable observers remain valid.
+    for (const std::string kind : {"EntityAction", "PrivateAction", "UserDefinedAction", "ParameterAction"}) {
+        require(catalog.load_file(original_catalog.c_str()), "Reload observer catalog");
+        auto action = catalog.select_node("//Maneuver/Event/Action").node();
+        while (action.first_child()) {
+            action.remove_child(action.first_child());
+        }
+        if (kind == "EntityAction" || kind == "ParameterAction") {
+            action.append_child("GlobalAction").append_child(kind.c_str());
+        } else {
+            action.append_child(kind.c_str());
+        }
+        check_catalog(catalog, "only VariableAction/SetAction observers");
+    }
+    require(catalog.load_file(original_catalog.c_str()), "Reload nested fixture");
+    catalog.select_node("//Maneuver").node().append_child("CatalogReference");
+    check_catalog(catalog, "nested maneuver catalog references");
+    require(catalog.load_file(original_catalog.c_str()), "Reload missing entry fixture");
+    catalog.select_node("//Maneuver").node().attribute("name") = "OtherEntry";
+    check_catalog(catalog, "missing maneuver catalog entry");
+    require(catalog.load_file(original_catalog.c_str()), "Reload duplicate fixture");
+    catalog.select_node("//Catalog").node().append_copy(catalog.select_node("//Maneuver").node());
+    check_catalog(catalog, "duplicate maneuver catalog entry");
+    // esmini searches across declared catalog directories; reject shadowed names.
+    require(catalog.load_file(original_catalog.c_str()), "Reload ambiguous fixture");
+    const auto shadow_directory = catalog_directory / "shadow";
+    std::filesystem::create_directories(shadow_directory);
+    require(catalog.save_file((shadow_directory / "ManeuverCatalog.xosc").c_str()), "Save shadow catalog");
+    auto vehicle_directory = fixture_xml.select_node("//CatalogLocations/VehicleCatalog/Directory").node();
+    const std::string vehicle_path = vehicle_directory.attribute("path").value();
+    vehicle_directory.attribute("path") = shadow_directory.string().c_str();
+    require(fixture_xml.save_file(catalog_source.c_str()), "Save ambiguous scenario");
+    check_catalog(catalog, "ambiguous maneuver catalog");
+    vehicle_directory.attribute("path") = vehicle_path.c_str();
+    require(fixture_xml.save_file(catalog_source.c_str()), "Restore scenario directories");
+    std::filesystem::remove(catalog_directory / "ManeuverCatalog.xosc");
+    bool missing_catalog_rejected = false;
+    try {
+        accsim::prepare_scenario(catalog_source, catalog_directory / "generated.xosc", "Ego");
+    } catch (const std::exception& exception) {
+        missing_catalog_rejected = std::string(exception.what()).find("cannot find maneuver catalog") != std::string::npos;
+    }
+    require(missing_catalog_rejected, "Missing maneuver catalog must not fall back to unchecked resources");
+
     // Later ego instructions must be rejected instead of silently competing with ACC.
     pugi::xml_document document;
     require(document.load_file(source.c_str()), "Load NCAP fixture");

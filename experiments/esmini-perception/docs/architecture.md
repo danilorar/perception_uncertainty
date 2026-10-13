@@ -47,3 +47,5 @@ Missing burst length is geometrically distributed with mean T, rather than fixed
 IID 每次理想检测独立以 p 概率删除；Markov 相同 p 带来连续缺失。整数随机映射由 seed、测量序号、目标 ID 和域决定。有限场景实际漏检率不保证等于 p，首次碰撞结束也截断检测机会和缺失段。
 
 IID independently removes each detection with probability p; Markov introduces bursts at the same stationary p. Integer random mapping uses seed, sequence, target ID and domain. Finite-run miss rates need not equal p; first-contact termination also censors exposure and burst duration.
+
+Referenced action-based maneuver catalogs are checked for variable-setting observer actions only. Movement, entity/custom actions, nested references and missing/ambiguous entries are rejected. Catalogs are read for validation, not expanded or executed by the preparer; esmini retains those responsibilities.
