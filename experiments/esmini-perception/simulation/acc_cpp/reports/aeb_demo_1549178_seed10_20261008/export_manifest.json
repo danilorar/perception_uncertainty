@@ -1,0 +1,25 @@
+{
+  "author": "Zhuo Ma",
+  "source_batch_name": "comparison_1549178_20261008T124403-779306Z",
+  "source_sha256": {
+    "comparison.csv": "2db7ca8d45f260353583f823d9c88d2b517cc44b68245ea50f1fa90473dd5b26",
+    "batch_manifest.json": "3d11c8ab44e601f1ab6e97c7dfbbb904b7db34109fee733f4e0e5263b0238a21"
+  },
+  "row_counts": {
+    "comparison.csv": 2
+  },
+  "run_config_source_sha256": {
+    "ideal_seed10/run_config.json": "6457a9b5e8ca60e84b17d9e481ef2dc50f6a6b8084ef7cfdef962a0273f6232e",
+    "dropout_seed10/run_config.json": "c7f0b39674a87bc7c06fb463ecb6c70542a9a132469bba7bb5bd20cd1c38cff3"
+  },
+  "exported_sha256": {
+    "comparison.csv": "72e00f4bf25854876af8b167ba61b3fddc9fad2544d5438841e8d2f144058d37",
+    "run_configs.json": "f26824f42f009cf1d2aa6fed67c89d8558661504af9f4b2fc44ec30c97b001a4",
+    "batch_manifest.json": "e1ee4494daeea041de713385a8dc58660d9e024d6bb3a69ab1b667f65819d90b"
+  },
+  "transformations": [
+    "absolute path values/keys replaced by portable labels; numeric cells unchanged",
+    "exported CSV line endings normalized to LF"
+  ],
+  "raw_runs_included": false
+}

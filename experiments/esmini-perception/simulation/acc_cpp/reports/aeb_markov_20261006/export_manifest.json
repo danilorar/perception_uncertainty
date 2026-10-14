@@ -1,0 +1,24 @@
+{
+  "author": "Zhuo Ma",
+  "source_batch_name": "aeb_markov_sensitivity_20261006T071308-294610Z",
+  "source_sha256": {
+    "sensitivity_summary.csv": "1420c17e964f089cc0fccec9c380542ad52d4aab17bf428607f5ca3d3bb50762",
+    "sensitivity_runs.csv": "bc021a1ab4855c86fad3dccd367608c19d2d307e4d5d04ecdb0a28485e5eb2e9",
+    "experiment_manifest.json": "b64872ea8e648e458c92a0c6fa0b480ba60db2853b123c368646cd09db69453c"
+  },
+  "row_counts": {
+    "sensitivity_summary.csv": 15,
+    "sensitivity_runs.csv": 1203
+  },
+  "run_config_source_sha256": {},
+  "exported_sha256": {
+    "sensitivity_summary.csv": "da17764e6bb8863549aa2e95ba0dcc773beb138e10a78454c04ba1241b3f4385",
+    "sensitivity_runs.csv": "081f9b9eb844f51337ac1b1e51f94a42dc3791678461b3917cb443287b9d609f",
+    "experiment_manifest.json": "37d987e669a67fea25e5080453d7eabffe39367efe4c9bc5f7bc8b40abe90723"
+  },
+  "transformations": [
+    "absolute path values/keys replaced by portable labels; numeric cells unchanged",
+    "exported CSV line endings normalized to LF"
+  ],
+  "raw_runs_included": false
+}

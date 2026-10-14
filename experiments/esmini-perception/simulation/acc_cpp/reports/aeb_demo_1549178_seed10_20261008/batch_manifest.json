@@ -1,0 +1,29 @@
+{
+  "author": "Zhuo Ma",
+  "controller": "aeb",
+  "aeb_ttc_s": 1.5,
+  "aeb_deceleration_mps2": 8.3385,
+  "scenario": "esmini-perception/Data/C_original_1549178.xosc",
+  "road": "esmini-perception/Data/C_original_1549178.xodr",
+  "binary": "esmini-perception/simulation/acc_cpp/build/runner/acc_sim",
+  "created_utc": "20261008T124403-779306Z",
+  "seeds": [
+    10
+  ],
+  "dropout_probability": 0.1,
+  "dropout_model": "markov",
+  "mean_missing_s": 0.5,
+  "markov_initialization": "stationary",
+  "validation": {
+    "10": {
+      "identity_equivalence": true,
+      "repeat_seed_equivalence": true,
+      "total_dropout_targets_hidden": true,
+      "total_dropout_collision_observed": true,
+      "target_truth_preserved": true
+    }
+  },
+  "scenario_sha256": "51d212c965d41fec518fd72e528ca0c70d1e06f94e00c7c635396a04351c1b20",
+  "road_sha256": "ab97d816f267a2e05c0536b5ff133bb9d51d8b504db8ef0275f5231b322d0f46",
+  "binary_sha256": "eceec5a39f427617d14a1633e2b91c4dbfaa7e50ea092ed6010abe8ca5fd3c43"
+}

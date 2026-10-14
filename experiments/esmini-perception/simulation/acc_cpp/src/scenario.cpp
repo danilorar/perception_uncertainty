@@ -1,0 +1,653 @@
+// Author: Zhuo Ma
+// Scenario preparation for recorded rear-end trajectories and native action-based inputs.
+// The source is read only. Only a generated copy relinquishes ego motion to the
+// native ACC controller; target trajectories or native actions remain intact.
+// Read prepare_scenario() for the preparation steps. The helpers above it
+// read XML and measure the original path; they do not advance the simulation.
+#include "accsim/scenario.hpp"
+#include "pugixml.hpp"
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <map>
+#include <stdexcept>
+#include <string>
+
+namespace accsim {
+namespace {
+namespace fs = std::filesystem;
+constexpr double epsilon = 1e-10;
+
+// =================================================================
+// =================== XML AND GEOMETRY HELPERS =====================
+// =================================================================
+
+[[noreturn]] void unsupported(const std::string& message) {
+    throw std::runtime_error("Unsupported scenario for the rear-end adapter: " + message);
+}
+
+double number(pugi::xml_node node, const char* attribute, bool required = true) {
+    const auto value = node.attribute(attribute);
+    if (!value) {
+        if (required) {
+            unsupported(std::string("missing ") + node.name() + "/@" + attribute);
+        }
+        return 0;
+    }
+
+    char* end = nullptr;
+    const double result = std::strtod(value.value(), &end);
+    if (end == value.value() || *end != '\0' || !std::isfinite(result)) {
+        unsupported(std::string("expected finite numeric ") + node.name() + "/@" + attribute);
+    }
+    return result;
+}
+
+double angle_delta(double angle) {
+    return std::remainder(angle, 2 * pi);
+}
+
+double separation(const Pose& a, const Pose& b) {
+    return std::hypot(std::hypot(b.x - a.x, b.y - a.y), b.z - a.z);
+}
+
+Pose read_pose(pugi::xml_node node) {
+    if (!node) {
+        unsupported("only explicit WorldPosition coordinates are supported");
+    }
+    return {number(node, "x"), number(node, "y"),        number(node, "z", false),
+            number(node, "h"), number(node, "p", false), number(node, "r", false)};
+}
+
+// =================================================================
+// ===================== READ TIMED TRAJECTORIES ====================
+// =================================================================
+
+// Keep time and cumulative distance so the initial speed can be recovered.
+ReferencePath read_reference(pugi::xml_node group) {
+    const auto trajectories = group.select_nodes(".//Trajectory");
+    if (trajectories.size() != 1) {
+        unsupported("one inline trajectory per vehicle is required");
+    }
+    const auto trajectory = trajectories[0].node();
+    if (trajectory.attribute("closed").as_bool()) {
+        unsupported("closed trajectories");
+    }
+    const auto action = trajectory.parent();
+    const auto timing = action.child("TimeReference").child("Timing");
+    if (!timing || std::string(timing.attribute("domainAbsoluteRelative").value()) != "absolute" ||
+        std::abs(number(timing, "scale") - 1) > epsilon || std::abs(number(timing, "offset")) > epsilon) {
+        unsupported("trajectory timing must be absolute, scale 1 and offset 0");
+    }
+    if (std::string(action.child("TrajectoryFollowingMode").attribute("followingMode").value()) !=
+        "position") {
+        unsupported("trajectory followingMode must be position");
+    }
+
+    ReferencePath result;
+    for (const auto vertex : trajectory.child("Shape").child("Polyline").children("Vertex")) {
+        ReferenceVertex v;
+        v.time_s = number(vertex, "time");
+        v.pose = read_pose(vertex.child("Position").child("WorldPosition"));
+        if (!result.vertices.empty()) {
+            const auto& previous = result.vertices.back();
+            if (v.time_s <= previous.time_s) {
+                unsupported("trajectory times must strictly increase");
+            }
+            const double length = separation(previous.pose, v.pose);
+            // A spatial reference cannot encode a stationary dwell unambiguously.
+            // This scene contains no repeated vertices; reject instead of silently
+            // deleting their time information when deriving its initial speed.
+            if (length <= epsilon) {
+                unsupported("repeated trajectory positions");
+            }
+            v.distance_m = previous.distance_m + length;
+        }
+        result.vertices.push_back(v);
+    }
+    if (result.vertices.size() < 2 || std::abs(result.vertices.front().time_s) > epsilon) {
+        unsupported("trajectory requires at least two vertices and must start at t=0");
+    }
+    return result;
+}
+
+// =================================================================
+// ===================== CHECK SUPPORTED GEOMETRY ===================
+// =================================================================
+
+void validate_flat_parallel(const ReferencePath& path, double common_heading) {
+    const auto& origin = path.vertices.front().pose;
+    double previous_longitudinal = -infinity;
+    for (const auto& vertex : path.vertices) {
+        const auto& pose = vertex.pose;
+        const double dx = pose.x - origin.x;
+        const double dy = pose.y - origin.y;
+        const double longitudinal = std::cos(common_heading) * dx + std::sin(common_heading) * dy;
+        // Allow accumulated lateral drift, but reject steep, turning or
+        // backward-moving trajectories outside this rear-end model's scope.
+        if (std::abs(pose.z - origin.z) > 0.05 || std::abs(angle_delta(pose.h - common_heading)) > 0.05 ||
+            std::abs(pose.p) > 0.02 || std::abs(pose.r) > 0.02 ||
+            longitudinal < previous_longitudinal - epsilon) {
+            unsupported("only flat, forward-moving trajectories with nearly parallel headings are supported");
+        }
+        previous_longitudinal = longitudinal;
+    }
+}
+
+void property(pugi::xml_node properties, const char* name, const char* value) {
+    auto node = properties.append_child("Property");
+    node.append_attribute("name") = name;
+    node.append_attribute("value") = value;
+}
+
+void check_reference(const ReferencePath& reference) {
+    if (reference.vertices.size() < 2) {
+        throw std::runtime_error("ReferencePath requires at least two vertices");
+    }
+}
+// =====================================================================
+// ===================== VALIDATE MANEUVER CATALOG =====================
+// =====================================================================
+// Inspect referenced maneuver XML only to validate supported action types.
+// esmini still resolves parameters and executes the catalog; we do not expand it.
+void validate_maneuver_catalog(pugi::xml_node root, pugi::xml_node reference) {
+    const std::string catalog_name = reference.attribute("catalogName").value();
+    const std::string entry_name = reference.attribute("entryName").value();
+    if (catalog_name.empty() || entry_name.empty() ||
+        catalog_name.find_first_of("$/\\") != std::string::npos ||
+        entry_name.find('$') != std::string::npos) {
+        unsupported("maneuver catalog and entry names must be explicit literals");
+    }
+
+    // Require one unambiguous file in the declared directories. Do not guess
+    // esmini's fallback resource paths or accept a different file with the same name.
+    fs::path catalog_file;
+    for (auto selected : root.select_nodes("./CatalogLocations/*/Directory")) {
+        const fs::path candidate = fs::path(selected.node().attribute("path").value()) /
+                                   (catalog_name + ".xosc");
+        if (fs::is_regular_file(candidate)) {
+            const auto resolved = fs::canonical(candidate);
+            if (!catalog_file.empty() && catalog_file != resolved) {
+                unsupported("ambiguous maneuver catalog: " + catalog_name);
+            }
+            catalog_file = resolved;
+        }
+    }
+    if (catalog_file.empty()) {
+        unsupported("cannot find maneuver catalog in declared directories: " + catalog_name);
+    }
+    pugi::xml_document document;
+    if (!document.load_file(catalog_file.c_str())) {
+        unsupported("cannot read maneuver catalog: " + catalog_file.string());
+    }
+    pugi::xml_node entry;
+    for (auto maneuver : document.child("OpenSCENARIO").child("Catalog").children("Maneuver")) {
+        if (std::string(maneuver.attribute("name").value()) == entry_name) {
+            if (entry) {
+                unsupported("duplicate maneuver catalog entry: " + entry_name);
+            }
+            entry = maneuver;
+        }
+    }
+    if (!entry) {
+        unsupported("missing maneuver catalog entry: " + entry_name);
+    }
+    if (entry.select_node(".//CatalogReference")) {
+        unsupported("nested maneuver catalog references require explicit review: " + entry_name);
+    }
+    // Only observer maneuvers that set variables are currently supported.
+    // In particular, an actor-free group can still contain global entity actions.
+    for (auto selected : entry.select_nodes(".//Action")) {
+        auto action = selected.node();
+        auto global = action.child("GlobalAction");
+        auto variable = global.child("VariableAction");
+        auto set = variable.child("SetAction");
+        if (!global || global != action.first_child() || global.next_sibling() ||
+            !variable || variable != global.first_child() || variable.next_sibling() ||
+            !set || set != variable.first_child() || set.next_sibling()) {
+            unsupported("maneuver catalog supports only VariableAction/SetAction observers: " + entry_name);
+        }
+    }
+}
+
+// esmini resolves vehicle catalogs, parameter expressions and Init positions.
+// This path preserves target actions instead of requiring timed trajectories.
+PreparedScenario prepare_actions(pugi::xml_document& document, PreparedScenario result,
+                                 const AccConfig& acc, bool native_reference) {
+    auto root = document.child("OpenSCENARIO");
+    if (root.child("ParameterValueDistribution")) {
+        unsupported("select a base scenario, not a parameter-distribution file");
+    }
+    std::map<std::string, pugi::xml_node> objects;
+    for (auto object : root.child("Entities").children("ScenarioObject")) {
+        const std::string name = object.attribute("name").value();
+        const bool inline_vehicle = bool(object.child("Vehicle"));
+        const bool catalog_vehicle = bool(object.child("CatalogReference"));
+        if (name.empty() || inline_vehicle == catalog_vehicle || !objects.emplace(name, object).second) {
+            unsupported("unique named vehicles with one Vehicle or CatalogReference are required");
+        }
+    }
+    if (!objects.count(result.ego_name)) {
+        unsupported("requested ego was not found: " + result.ego_name);
+    }
+
+    // Preserve initialization; require explicit ego placement and a step speed.
+    pugi::xml_node ego_init;
+    for (auto init : root.child("Storyboard").child("Init").child("Actions").children("Private")) {
+        if (std::string(init.attribute("entityRef").value()) == result.ego_name) {
+            if (ego_init) {
+                unsupported("one Init/Private for ego is required");
+            }
+            ego_init = init;
+        }
+    }
+    if (!ego_init || !ego_init.select_node("./PrivateAction/TeleportAction") ||
+        !ego_init.select_node("./PrivateAction/LongitudinalAction/SpeedAction")) {
+        unsupported("action-based ego needs initial teleport and speed actions");
+    }
+    auto dynamics = ego_init.select_node("./PrivateAction/LongitudinalAction/SpeedAction/SpeedActionDynamics").node();
+    if (std::string(dynamics.attribute("dynamicsShape").value()) != "step" ||
+        number(dynamics, "value") != 0) {
+        unsupported("initial ego speed must be instantaneous");
+    }
+    if (root.select_node("./Storyboard/Init/Actions/Private/PrivateAction/ControllerAction")) {
+        unsupported("existing controller actions require explicit review");
+    }
+
+    // Reject competing ego motion, including unresolved catalog maneuvers on ego.
+    // Referenced catalogs are checked separately below, including actor-free groups.
+    for (auto selected : root.select_nodes("./Storyboard/Story/Act/ManeuverGroup")) {
+        auto group = selected.node();
+        if (group.child("Actors").attribute("selectTriggeringEntities").as_bool()) {
+            unsupported("dynamic actor selection");
+        }
+        for (auto actor : group.child("Actors").children("EntityRef")) {
+            const std::string name = actor.attribute("entityRef").value();
+            if (!objects.count(name) || name == result.ego_name) {
+                unsupported("later ego actions or unresolved actors require explicit review");
+            }
+        }
+    }
+    if (root.select_node(".//UserDefinedAction | .//EntityAction")) {
+        unsupported("custom/global entity actions require explicit review");
+    }
+
+    // Anchor resource references to their source directory, not the output folder.
+    auto resolve = [&](const char* text) {
+        fs::path path(text);
+        if (path.is_relative()) {
+            path = result.source.parent_path() / path;
+        }
+        return fs::canonical(path);
+    };
+    auto road = root.child("RoadNetwork").child("LogicFile");
+    result.road = resolve(road.attribute("filepath").value());
+    fs::create_directories(result.generated.parent_path());
+    const auto snapshot = result.generated.parent_path() / result.road.filename();
+    if (result.generated == result.road || snapshot == result.source ||
+        (fs::exists(snapshot) && fs::equivalent(snapshot, result.source))) {
+        unsupported("generated inputs must not overwrite original files");
+    }
+    if (!fs::exists(snapshot) || !fs::equivalent(snapshot, result.road)) {
+        fs::copy_file(result.road, snapshot, fs::copy_options::overwrite_existing);
+    }
+    road.attribute("filepath") = snapshot.string().c_str();
+    for (auto selected : root.select_nodes("./CatalogLocations/*/Directory")) {
+        auto directory = selected.node();
+        directory.attribute("path") = resolve(directory.attribute("path").value()).string().c_str();
+    }
+    for (auto selected : root.select_nodes("./Storyboard/Story/Act/ManeuverGroup//CatalogReference")) {
+        auto reference = selected.node();
+        if (std::string(reference.parent().name()) != "ManeuverGroup") {
+            unsupported("nested storyboard catalog references require explicit review");
+        }
+        validate_maneuver_catalog(root, reference);
+    }
+    for (auto selected : root.select_nodes("./RoadNetwork/SceneGraphFile")) {
+        auto scene = selected.node();
+        if (std::string(scene.attribute("filepath").value()).size()) {
+            scene.attribute("filepath") = resolve(scene.attribute("filepath").value()).string().c_str();
+        }
+    }
+
+    auto ego = objects.at(result.ego_name);
+    ego.remove_child("ObjectController");
+    auto controller = ego.append_child("ObjectController").append_child("Controller");
+    controller.append_attribute("name") = "NativeEsminiACC";
+    auto properties = controller.append_child("Properties");
+    property(properties, "esminiController", native_reference ? "ReferenceACC" : "PerceptionACC");
+    property(properties, "mode", "override");
+    auto setting = [&](const char* name, double value) {
+        auto item = properties.append_child("Property");
+        item.append_attribute("name") = name;
+        item.append_attribute("value").set_value(value, 17);
+    };
+    setting("timeGap", acc.time_gap_s);
+    setting("lateralDist", acc.lateral_distance_m);
+    // Omission lets native Activate capture the resolved initial ego speed.
+    if (acc.set_speed_mps >= 0) {
+        setting("setSpeed", acc.set_speed_mps);
+    }
+    auto activate = ego_init.append_child("PrivateAction").append_child("ControllerAction")
+                            .append_child("ActivateControllerAction");
+    activate.append_attribute("longitudinal") = "true";
+    activate.append_attribute("lateral") = "true";
+    // Native stop triggers remain; the runner's requested duration is an upper limit.
+    result.duration_s = infinity;
+    if (!document.save_file(result.generated.c_str(), "  ", pugi::format_default, pugi::encoding_utf8)) {
+        throw std::runtime_error("Cannot save prepared action scenario");
+    }
+    return result;
+}
+} // namespace
+
+// =================================================================
+// ====================== REFERENCE PATH QUERIES ====================
+// =================================================================
+
+// These functions measure/interpolate the source path; native ACC moves ego.
+double ReferencePath::initial_speed() const {
+    check_reference(*this);
+    const double dt = vertices[1].time_s - vertices[0].time_s;
+    if (!(dt > 0)) {
+        throw std::runtime_error("ReferencePath has invalid initial time interval");
+    }
+    return (vertices[1].distance_m - vertices[0].distance_m) / dt;
+}
+
+Pose ReferencePath::at_distance(double station) const {
+    check_reference(*this);
+    if (!std::isfinite(station)) {
+        throw std::runtime_error("Reference station must be finite");
+    }
+    auto upper =
+        std::upper_bound(vertices.begin(), vertices.end(), station,
+                         [](double s, const ReferenceVertex& vertex) { return s < vertex.distance_m; });
+    std::size_t index = upper == vertices.begin() ? 0
+                        : upper == vertices.end() ? vertices.size() - 2
+                                                  : static_cast<std::size_t>(upper - vertices.begin() - 1);
+    const auto& a = vertices[index];
+    const auto& b = vertices[index + 1];
+    const double length = b.distance_m - a.distance_m;
+    if (!(length > epsilon)) {
+        throw std::runtime_error("ReferencePath contains zero-length segment");
+    }
+    const double fraction = (station - a.distance_m) / length;
+    // Beyond the original path, continue the endpoint segment's spatial tangent.
+    // Orientation is held at that endpoint rather than extrapolated indefinitely.
+    const double orientation_fraction = std::clamp(fraction, 0.0, 1.0);
+    Pose pose;
+    pose.x = a.pose.x + fraction * (b.pose.x - a.pose.x);
+    pose.y = a.pose.y + fraction * (b.pose.y - a.pose.y);
+    pose.z = a.pose.z + fraction * (b.pose.z - a.pose.z);
+    pose.h = a.pose.h + orientation_fraction * angle_delta(b.pose.h - a.pose.h);
+    pose.p = a.pose.p + orientation_fraction * angle_delta(b.pose.p - a.pose.p);
+    pose.r = a.pose.r + orientation_fraction * angle_delta(b.pose.r - a.pose.r);
+    return pose;
+}
+
+std::pair<double, double> ReferencePath::project(const Pose& pose) const {
+    check_reference(*this);
+    if (!std::isfinite(pose.x) || !std::isfinite(pose.y)) {
+        throw std::runtime_error("Projection requires finite position");
+    }
+    double best_squared = infinity;
+    double best_station = 0;
+    double best_lateral = 0;
+    for (std::size_t index = 0; index + 1 < vertices.size(); ++index) {
+        const auto& a = vertices[index];
+        const auto& b = vertices[index + 1];
+        const double dx = b.pose.x - a.pose.x;
+        const double dy = b.pose.y - a.pose.y;
+        const double squared = dx * dx + dy * dy;
+        if (!(squared > epsilon * epsilon)) {
+            throw std::runtime_error("ReferencePath has vertical/zero-length planar segment");
+        }
+        double fraction = ((pose.x - a.pose.x) * dx + (pose.y - a.pose.y) * dy) / squared;
+        // Endpoint rays continue the first/last segment; interior segments are
+        // bounded. Signed lateral offset is positive to the left of travel.
+        if (index != 0) {
+            fraction = std::max(0.0, fraction);
+        }
+        if (index + 2 != vertices.size()) {
+            fraction = std::min(1.0, fraction);
+        }
+        const double ex = pose.x - (a.pose.x + fraction * dx);
+        const double ey = pose.y - (a.pose.y + fraction * dy);
+        const double squared_distance = ex * ex + ey * ey;
+        if (squared_distance < best_squared) {
+            best_squared = squared_distance;
+            best_station = a.distance_m + fraction * (b.distance_m - a.distance_m);
+            best_lateral = (-dy * ex + dx * ey) / std::sqrt(squared);
+        }
+    }
+    return {best_station, best_lateral};
+}
+
+// ===================================================================
+// ======================= PREPARE ACC SCENARIO ======================
+// ===================================================================
+
+// Read and validate the source, edit an in-memory copy, then save generated inputs.
+// The target keeps its trajectory; native ACC takes over ego movement.
+PreparedScenario prepare_scenario(const std::filesystem::path& source, const std::filesystem::path& generated,
+                                  const std::string& ego_name, const AccConfig& acc, bool native_reference) {
+    // ===== 1. Load the source without overwriting it ===========================
+    // XML edits below affect only this in-memory copy.
+    PreparedScenario result;
+    result.ego_name = ego_name;
+    result.source = fs::canonical(source);
+    result.generated = fs::weakly_canonical(fs::absolute(generated));
+    if (result.generated == result.source ||
+        (fs::exists(result.generated) && fs::equivalent(result.generated, result.source))) {
+        throw std::runtime_error("Generated scenario must not overwrite the original");
+    }
+
+    pugi::xml_document document;
+    const auto loaded = document.load_file(result.source.c_str());
+    if (!loaded) {
+        throw std::runtime_error(std::string("Cannot read scenario XML: ") + loaded.description());
+    }
+    auto root = document.child("OpenSCENARIO");
+    if (!root) {
+        unsupported("missing OpenSCENARIO root");
+    }
+
+    if (!root.select_node(".//Trajectory")) {
+        return prepare_actions(document, result, acc, native_reference);
+    }
+
+    // ===== 2. Find the two vehicles ===========================================
+    // Require unique names and identify the requested ego.
+    auto entities = root.child("Entities");
+    std::map<std::string, pugi::xml_node> objects;
+    for (auto object : entities.children("ScenarioObject")) {
+        const std::string name = object.attribute("name").value();
+        if (name.empty() || !object.child("Vehicle") || !objects.emplace(name, object).second) {
+            unsupported("unique named inline vehicles are required");
+        }
+    }
+    if (objects.size() != 2 || !objects.count(ego_name)) {
+        unsupported("exactly two vehicles including the requested ego are required");
+    }
+
+    // ===== 3. Read and validate both trajectories =============================
+    // Keep ego's path for initial speed and progress measurements.
+    std::map<std::string, ReferencePath> paths;
+    pugi::xml_node ego_group;
+    for (const auto selected : root.select_nodes("./Storyboard/Story/Act/ManeuverGroup")) {
+        auto group = selected.node();
+        auto actors = group.child("Actors");
+        const auto refs = actors.select_nodes("./EntityRef");
+        if (refs.size() != 1 || actors.attribute("selectTriggeringEntities").as_bool()) {
+            unsupported("each maneuver group must explicitly control one vehicle");
+        }
+        const std::string name = refs[0].node().attribute("entityRef").value();
+        if (!objects.count(name) || paths.count(name)) {
+            unsupported("one maneuver group per declared vehicle is required");
+        }
+        paths.emplace(name, read_reference(group));
+        if (name == ego_name) {
+            ego_group = group;
+        }
+    }
+    if (paths.size() != objects.size() || !ego_group) {
+        unsupported("both vehicles need one explicit timed trajectory");
+    }
+
+    result.reference = paths.at(ego_name);
+    for (const auto& entry : paths) {
+        validate_flat_parallel(entry.second, result.reference.vertices.front().pose.h);
+    }
+    if (!(result.reference.initial_speed() > 0)) {
+        unsupported("ego must start moving forward");
+    }
+
+    // ===== 4. Read vehicle limits and the scenario stop time ===================
+    const auto limits = objects.at(ego_name).child("Vehicle").child("Performance");
+    result.max_acceleration = number(limits, "maxAcceleration");
+    result.max_deceleration = number(limits, "maxDeceleration");
+    if (!(result.max_acceleration > 0 && result.max_deceleration > 0)) {
+        unsupported("positive vehicle acceleration limits required");
+    }
+
+    const auto stop = root.select_nodes(
+        "./Storyboard/StopTrigger/ConditionGroup/Condition/ByValueCondition/SimulationTimeCondition");
+    if (stop.size() != 1 ||
+        root.select_nodes("./Storyboard/StopTrigger/ConditionGroup/Condition").size() != 1) {
+        unsupported("one simulation-time stop condition is required");
+    }
+    result.duration_s = number(stop[0].node(), "value");
+    if (!(result.duration_s > 0)) {
+        unsupported("positive stop time required");
+    }
+    const std::string stop_rule = stop[0].node().attribute("rule").value();
+    if (stop_rule != "greaterThan" && stop_rule != "greaterOrEqual") {
+        unsupported("unsupported stop-time comparison");
+    }
+
+    // ===== 5. Resolve and copy the OpenDRIVE road ==============================
+    // The generated XOSC will refer to this local road snapshot.
+    auto road_node = root.child("RoadNetwork").child("LogicFile");
+    const fs::path declared_road = road_node.attribute("filepath").value();
+    if (declared_road.empty()) {
+        unsupported("missing road LogicFile");
+    }
+    fs::path road = declared_road.is_absolute() ? declared_road : result.source.parent_path() / declared_road;
+    // The supplied data bundle places .xosc and .xodr together although the
+    // original XML names ../xodr/. Resolve that known bundle layout explicitly.
+    if (!fs::is_regular_file(road)) {
+        road = result.source.parent_path() / declared_road.filename();
+    }
+    if (!fs::is_regular_file(road)) {
+        throw std::runtime_error("Cannot resolve scenario OpenDRIVE file");
+    }
+    result.road = fs::canonical(road);
+    if (result.generated == result.road ||
+        (fs::exists(result.generated) && fs::equivalent(result.generated, result.road))) {
+        throw std::runtime_error("Generated scenario must not overwrite original road data");
+    }
+
+    // Keep generated inputs self-contained, including Windows cross-drive runs.
+    // This is a byte-identical snapshot; the original road remains read-only.
+    fs::create_directories(result.generated.parent_path());
+    const auto road_snapshot = result.generated.parent_path() / result.road.filename();
+    if (!fs::exists(road_snapshot) || !fs::equivalent(road_snapshot, result.road)) {
+        fs::copy_file(result.road, road_snapshot, fs::copy_options::overwrite_existing);
+    }
+    road_node.attribute("filepath") = result.road.filename().generic_string().c_str();
+
+    // ===== 6. Assign native ACC and its settings to ego ========================
+    // The controller name selects target copies or the live-target reference.
+    auto ego = objects.at(ego_name);
+    ego.remove_child("ObjectController");
+    auto controller = ego.append_child("ObjectController").append_child("Controller");
+    controller.append_attribute("name") = "NativeEsminiACC";
+    auto controller_properties = controller.append_child("Properties");
+
+    property(controller_properties, "esminiController",
+             native_reference ? "ReferenceACC" : "PerceptionACC");
+    auto setting = [&](const char* name, double value) {
+        auto item = controller_properties.append_child("Property");
+        item.append_attribute("name") = name;
+        item.append_attribute("value").set_value(value, 17);
+    };
+    setting("timeGap", acc.time_gap_s);
+    setting("setSpeed", acc.set_speed_mps < 0 ? result.reference.initial_speed() : acc.set_speed_mps);
+    setting("lateralDist", acc.lateral_distance_m);
+    property(controller_properties, "mode", "override");
+
+    // ===== 7. Clean up vehicle model properties ===============================
+    // Remove unresolved model files and old control properties.
+    // Keep the original author's FileHeader unchanged.
+    for (const auto& entry : objects) {
+        auto properties = entry.second.child("Vehicle").child("Properties");
+        if (!properties) {
+            properties = entry.second.child("Vehicle").append_child("Properties");
+        }
+        while (properties.remove_child("File")) {
+        }
+        for (auto item = properties.child("Property"); item;) {
+            const auto next = item.next_sibling("Property");
+            const std::string name = item.attribute("name").value();
+            if (name == "model_id" || name == "modelId" || name == "modelid" || name == "control") {
+                properties.remove_child(item);
+            }
+            item = next;
+        }
+        property(properties, "model_id", entry.first == ego_name ? "0" : "2");
+    }
+
+    // ===== 8. Set initial speeds and activate ego control =====================
+    // Derive speeds from the first trajectory segments, then repair the
+    // controller activation structure without changing the target trajectory.
+    std::map<std::string, bool> initialized;
+    for (auto init : root.child("Storyboard").child("Init").child("Actions").children("Private")) {
+        const std::string name = init.attribute("entityRef").value();
+        if (!paths.count(name) || initialized[name]) {
+            unsupported("one Init/Private per vehicle required");
+        }
+        initialized[name] = true;
+        const auto speed = init.select_nodes(
+            "./PrivateAction/LongitudinalAction/SpeedAction/SpeedActionTarget/AbsoluteTargetSpeed");
+        const auto teleports = init.select_nodes("./PrivateAction/TeleportAction/Position/WorldPosition");
+        if (speed.size() != 1 || teleports.size() != 1) {
+            unsupported("one initial absolute speed and world teleport per vehicle required");
+        }
+        if (separation(read_pose(teleports[0].node()), paths.at(name).vertices.front().pose) > 1e-6) {
+            unsupported("initial teleport must equal the first trajectory vertex");
+        }
+        speed[0].node().attribute("value").set_value(paths.at(name).initial_speed(), 17);
+        // The input incorrectly nests speed and ControllerAction in the same
+        // PrivateAction. Remove its activation and append a separate ego action.
+        for (auto action = init.child("PrivateAction"); action;) {
+            const auto next = action.next_sibling("PrivateAction");
+            while (action.remove_child("ControllerAction")) {
+            }
+            if (!action.first_child()) {
+                init.remove_child(action);
+            }
+            action = next;
+        }
+        if (name == ego_name) {
+            auto activate = init.append_child("PrivateAction")
+                                .append_child("ControllerAction")
+                                .append_child("ActivateControllerAction");
+            activate.append_attribute("longitudinal") = "true";
+            activate.append_attribute("lateral") = "true";
+        }
+    }
+    if (initialized.size() != objects.size()) {
+        unsupported("missing vehicle initialization");
+    }
+
+    // ===== 9. Remove ego's trajectory and save the generated XOSC ==============
+    // Native ACC now owns ego movement. The target maneuver is left intact.
+    ego_group.parent().remove_child(ego_group);
+    fs::create_directories(result.generated.parent_path());
+    if (!document.save_file(result.generated.c_str(), "  ", pugi::format_default, pugi::encoding_utf8)) {
+        throw std::runtime_error("Cannot write generated scenario: " + result.generated.string());
+    }
+    return result;
+}
+} // namespace accsim
