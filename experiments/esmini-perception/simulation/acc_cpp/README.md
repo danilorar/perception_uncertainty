@@ -13,9 +13,11 @@ Requires Git, a C++17 compiler, Python ≥3.9 and CMake ≥3.21. The first build
 
 Open `run_single_acc.ipynb`, edit the settings cells and run the cells in order:
 
+Choose `SCENARIO_MODE="recorded"` for trajectory-based `C_original` files, or `"ncap_2023"` for the supported NCAP CCR base file. Recorded mode uses trajectory-defined motion and ignores the NCAP speed/braking settings; NCAP mode applies those overrides and the ego-speed sweep. Switching modes requires no commented command arguments.
+
 1. Set `ACC_CPP_DIR` to this directory if the kernel starts elsewhere.
-2. Choose scenario, timestep, duration, time gap, optional cruise speed and stopping/logging settings. Leave `NATIVE_REFERENCE=False` for target copies. Choose `IDEAL_SENSOR_ENABLED=True` for sensor filtering and set the sensor mount, range and horizontal FOV in the settings cells.
-3. Choose `MARKOV_SEEDS` (default `[10, 11, 12]`). The launch cell runs one ideal baseline and one Markov run per seed using `subprocess`. Each gets a subfolder inside a unique `results/acc_batch_*` directory. Use `MARKOV_SEEDS=[]` for only the ideal baseline.
+2. Choose scenario, timestep, time gap, optional cruise speed and stopping/logging settings. Leave `NATIVE_REFERENCE=False` for target copies. Choose `IDEAL_SENSOR_ENABLED=True` for sensor filtering and set the sensor mount, range and horizontal FOV in the settings cells.
+3. Choose `EGO_SPEEDS_KPH` (for the NCAP ego-speed parameter) and `MARKOV_SEEDS`. The launch cell runs one ideal baseline and every Markov seed at each ego speed using `subprocess`. Recorded `C_original` scenarios do not support the NCAP speed override. Each gets a subfolder inside a unique `results/acc_batch_*` directory. Use `MARKOV_SEEDS=[]` for only the ideal baseline.
 4. Load the saved results and summaries, then compare ego speed, actual gap and missed detections. Plots require `DETAILED_LOGS=True`; the target-speed line assumes target ID 1. Runs may end at different times.
 
 Linux/macOS binary: `build/runner/acc_sim`. On Windows, set the notebook's `BINARY_FILE` to `build/runner/Release/acc_sim.exe`.
@@ -98,7 +100,7 @@ The sensor/Markov period is the simulation timestep. Initialization at time zero
 
 The runner is ACC-only. `--controller acc` is accepted for explicit commands; AEB and its settings are rejected. Supported settings are `--ego-name` (default `object_1`), `--scenario`, `--output-dir`, `--config`, `--dt`, `--duration`, `--time-gap`, `--set-speed`, `--esmini-home`, `--native-reference`, `--stop-on-collision` `--detailed-logs` and `--viewer`. `--perception ideal|markov` selects the observation model (default ideal). Nonzero `--dropout-p` requires Markov. Ideal sensing uses `--ideal-sensor true`, `--sensor-x-m`, `--sensor-y-m`, `--sensor-z-m`, `--sensor-heading-rad`, `--sensor-near-m`, `--sensor-far-m` and `--sensor-horizontal-fov-rad`. Markov accepts `--mean-missing-s` (default 0.5 s) and `--seed` (default 0). `--esmini-home` supplies optional resources, not a replacement engine library.
 
-Defaults: `dt=0.01 s`, duration `10 s`, time gap `1.5 s`, cruise speed from the scenario's initial ego speed, stop on collision enabled, detailed logs disabled. Duration must be an integer multiple of `dt`. Config paths are relative to the config file; CLI paths are relative to the current directory. Output directories must be new or empty. `configs/ideal.ini` remains a valid optional ACC configuration.
+Defaults: `dt=0.01 s`, end at the scenario’s own stopping condition, time gap `1.5 s`, cruise speed from the scenario's initial ego speed, stop on collision enabled, detailed logs disabled. `--duration` is an optional upper limit and must be a positive integer multiple of `dt`. Without it, esmini decides when the scenario ends; the viewer closes when the run finishes. A limit longer than the scenario is allowed. `run_config.json` records `duration_s: null` when no override is set. Config paths are relative to the config file; CLI paths are relative to the current directory. Output directories must be new or empty. `configs/ideal.ini` remains a valid optional ACC configuration.
 
 Each run writes:
 
@@ -126,3 +128,7 @@ Sensor fixtures additionally check near/far range, rear/FOV exclusion, detection
 The obsolete ACC packet wrapper, AEB bridges/test and custom movement code were removed. The dropout comparison, Markov sensitivity and perception replay tools were removed because their workflows require the retired path. The historical batch exporter was also removed because no supported ACC workflow uses it. [Reports](reports/README.md) may contain historical commands that no longer exist.
 
 Upstream [ACC source](https://github.com/esmini/esmini/blob/v3.8.1/EnvironmentSimulator/Modules/Controllers/ControllerACC.cpp) is MPL 2.0. Included pugixml 1.14 retains its MIT license. Original data and third-party attribution are preserved.
+
+## Replay a batch together
+
+Viewer builds (`python3 tools/build_native.py --viewer`) also build esmini’s `replayer`. After running a notebook batch, use its optional replay cell. `tools/replay_batch.py` copies each saved `sim.dat` into a uniquely named replay folder inside the batch, adds generated-road and model search paths, and opens one overlay window. It prints the recording-to-run mapping. Tab switches vehicles; Space pauses; Esc closes. The replay closes at the end. This plays saved movements without executing controllers again; overlapping vehicles are expected.

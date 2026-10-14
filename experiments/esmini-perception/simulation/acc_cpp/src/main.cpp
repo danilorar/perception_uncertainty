@@ -34,7 +34,7 @@ struct Options {
     std::string controller = "acc";
     std::string ego_name = "object_1";
     double dt = 0.01;
-    double duration = 10;
+    double duration = infinity; // No override: let esmini finish the scenario.
     bool stop_on_collision = true;
 
     // Optional NCAP parameter overrides; absent arguments preserve source defaults.
@@ -153,11 +153,12 @@ void read_command_line(int argc, char** argv, std::map<std::string, std::string>
                 << "acc_sim --scenario PATH --output-dir NEW_DIRECTORY [--config FILE]\n"
                 << "  --ego-name NAME (default object_1)\n"
                 << "  --ego-speed-kph KPH --target-speed-kph KPH --target-braking true|false\n"
-                << "  --dt .01 --duration 10 --time-gap 1.5 --set-speed MPS\n"
+                << "  --dt .01 --time-gap 1.5 --set-speed MPS\n"
                 << "  --esmini-home RESOURCES --controller acc --dropout-p 0\n"
                 << "  --native-reference true|false (default false: independent target copies)\n"
                 << "  --stop-on-collision true|false --detailed-logs true|false\n"
                 << "  --viewer true|false (default false; requires graphics build)\n"
+                << "  --duration SECONDS (optional upper limit; default: scenario end)\n"
                 << "  --ideal-sensor true|false (default false: all targets)\n"
                 << "  --sensor-x-m 0 --sensor-y-m 0 --sensor-z-m .5 --sensor-heading-rad 0\n"
                 << "  --sensor-near-m 0 --sensor-far-m 100 --sensor-horizontal-fov-rad 1.0471975512\n"
@@ -297,7 +298,8 @@ void validate_options(const Options& options) {
         options.set_speed < -1) {
         throw std::invalid_argument("Invalid simulation parameters");
     }
-    if (std::abs(options.duration / options.dt - std::round(options.duration / options.dt)) > 1e-8) {
+    if (std::isfinite(options.duration) &&
+        std::abs(options.duration / options.dt - std::round(options.duration / options.dt)) > 1e-8) {
         throw std::invalid_argument("duration must be an integer multiple of dt");
     }
     if (!fs::is_regular_file(options.source)) {
@@ -445,7 +447,7 @@ void write_config(const Options& o, const PreparedScenario& scene, const AccConf
          << "  \"source_fnv1a64\": " << json(fingerprint(scene.source)) << ",\n"
          << "  \"road_fnv1a64\": " << json(fingerprint(scene.road)) << ",\n"
          << "  \"dt_s\": " << o.dt << ",\n"
-         << "  \"duration_s\": " << o.duration << ",\n"
+         << "  \"duration_s\": " << numeric(o.duration) << ",\n"
          << "  \"time_gap_s\": " << acc.time_gap_s << ",\n"
          << "  \"set_speed_mps\": " << acc.set_speed_mps << ",\n"
          << "  \"progress_source\": " << json(scene.reference.vertices.empty() ? "accumulated planar travel" : "recorded reference path projection") << ",\n"
@@ -599,9 +601,6 @@ int run(const Options& options) {
         acc_config, options.native_reference);
     const auto original_hash = fingerprint(scene.source);
     const auto road_hash = fingerprint(scene.road);
-    if (options.duration > scene.duration_s + 1e-8) {
-        throw std::invalid_argument("duration exceeds original scenario stop time");
-    }
 
     // Constructing engine calls SE_InitWithArgs inside esmini_adapter.cpp.
     // This loads the generated XOSC and sets up esmini recording (sim.dat and run.log).
@@ -706,7 +705,7 @@ int run(const Options& options) {
                 break;
             }
         }
-        // Finish at the requested duration, allowing for floating-point clock error.
+        // An optional CLI/config duration can stop the run before the scenario ends.
         if (world.time_s >= options.duration - 1e-8) {
             write_terminal_result();
             break;

@@ -138,11 +138,12 @@ def main():
     flags = ["-DUSE_" + name + "=OFF" for name in ("OSI", "SUMO", "GTEST", "IMPLOT", "PROJ")]
     flags.append("-DUSE_OSG=" + ("ON" if args.viewer else "OFF"))
     command([cmake, "-S", source, "-B", engine_build, "-DCMAKE_BUILD_TYPE=Release", *flags,
-             "-DDOWNLOAD_EXTERNALS=OFF", "-DBUILD_EXAMPLES=OFF", "-DBUILD_REPLAYER=OFF", "-DBUILD_ODRPLOT=OFF",
+             "-DDOWNLOAD_EXTERNALS=OFF", "-DBUILD_EXAMPLES=OFF", "-DBUILD_REPLAYER=" + ("ON" if args.viewer else "OFF"), "-DBUILD_ODRPLOT=OFF",
              "-DENABLE_INCLUDE_WHAT_YOU_USE=OFF", "-DCMAKE_VERBOSE_MAKEFILE=OFF",
              "-DACCSIM_BRIDGE_ROOT=" + str(ROOT),
              "-DCMAKE_PROJECT_esmini_INCLUDE=" + str(ROOT / "tools/add_bridge.cmake")], source)
-    command([cmake, "--build", engine_build, "--config", "Release", "--target", "esminiLib", "--parallel", args.jobs],
+    targets = ["esminiLib", "replayer"] if args.viewer else ["esminiLib"]
+    command([cmake, "--build", engine_build, "--config", "Release", "--target", *targets, "--parallel", args.jobs],
             logfile=build / "engine-build.log")
     home = build / "engine-home"
     (home / "bin").mkdir(parents=True, exist_ok=True)
@@ -154,6 +155,12 @@ def main():
     if os.name == "nt":
         for file in matches[0].parent.glob("*.lib"):
             shutil.copy2(file, home / "bin" / file.name)
+    if args.viewer:
+        replay_name = "replayer.exe" if os.name == "nt" else "replayer"
+        replay_files = [file for file in engine_build.rglob(replay_name) if file.is_file()]
+        if len(replay_files) != 1:
+            raise RuntimeError("Expected one built replayer, found: " + str(replay_files))
+        shutil.copy2(replay_files[0], home / "bin" / replay_name)
     header = home / "EnvironmentSimulator/Libraries/esminiLib"
     header.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source / "EnvironmentSimulator/Libraries/esminiLib/esminiLib.hpp", header / "esminiLib.hpp")
