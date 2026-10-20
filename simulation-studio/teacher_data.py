@@ -1,14 +1,14 @@
 """Import the supplied timed trajectories, without modifying teacher DATA.
 
-Positions/headings are copied exactly. Velocity is a derived 0.20 s secant;
+Positions/headings are copied exactly. Speed uses the completed source segment;
 the file's Init speed of zero is superseded by its timed trajectory action.
-The replay ends at the last recorded vertex, with no invented tail.
+After the last vertex the vehicles hold position, as in the team baseline.
 """
 import csv
 import math
 import xml.etree.ElementTree as ET
 import numpy as np
-from settings import PROJECT, REFERENCES, SCENARIOS, sha256, write_json
+from settings import PROJECT, REFERENCES, SCENARIOS, TEAM_BASELINE, sha256, write_json
 
 
 def read_source(case):
@@ -35,10 +35,10 @@ def read_source(case):
         if (len(values) < 21 or not np.isfinite(values).all() or values[0,0] != 0
                 or not np.allclose(np.diff(values[:,0]), .01, rtol=0, atol=1e-8)):
             raise ValueError('轨迹需要从零开始的有限 0.01 秒采样数据。')
-        index = np.arange(len(values))
-        lo = np.clip(index-10, 0, len(values)-21)
-        hi = lo+20
-        velocity = (values[hi,1:3]-values[lo,1:3])/(values[hi,0]-values[lo,0])[:,None]
+        # Match Zhuo Ma's HostReference.at_time: use the segment just completed
+        # at an exact vertex; the first vertex uses the first segment.
+        segment = np.diff(values[:, 1:3], axis=0) / np.diff(values[:, 0])[:, None]
+        velocity = np.vstack((segment[0], segment))
         trajectories[name] = (values, velocity)
     if set(trajectories) != {'object_1','object_2'} or set(definitions) != set(trajectories):
         raise ValueError('老师场景必须包含 object_1 和 object_2 两条轨迹。')
@@ -56,6 +56,10 @@ def read_source(case):
 
 def prepare_teacher(case):
     source, road, definitions, trajectories, warnings = read_source(case)
+    stop = ET.parse(source).find('./Storyboard/StopTrigger/ConditionGroup/Condition/ByValueCondition/SimulationTimeCondition')
+    if stop is None or stop.get('rule') != 'greaterThan':
+        raise ValueError('团队基准需要原场景的 greaterThan 时间停止条件。')
+    stop_time = float(stop.get('value'))
     out = REFERENCES / case
     out.mkdir(parents=True, exist_ok=True)
     objects, rows = [], []
@@ -87,14 +91,16 @@ def prepare_teacher(case):
         'source_sha256':sha256(source), 'road_file':str(road), 'road_sha256':sha256(road),
         'truth_sha256':sha256(out/'truth.csv'), 'entity_definitions':definitions,
         'objects':objects, 'ego_id':0, 'ego_name':'object_1', 'dt_s':.01,
-        'duration_s':float(times[-1]), 'timing_policy':'recorded_trajectory_end',
+        'duration_s':round(stop_time + .01, 8), 'timing_policy':'team_source_stop_trigger',
+        'trajectory_duration_s':float(times[-1]), 'stop_trigger_s':stop_time,
+        'velocity_policy':'completed_source_segment', 'team_baseline':TEAM_BASELINE,
         'source_trajectory_verified':True, 'reference_input':str(source),
         'initial_ego':{'ego_speed_kph':ego['speed']*3.6,'ego_heading_deg':math.degrees(ego['h'])},
         'source_warnings':warnings,
-        'method':'Exact supplied position and heading vertices; linear position and shortest-angle heading interpolation. Velocity is derived with a 0.20 s secant window, shifted at endpoints. Replay ends at the last recorded vertex (9.98 s), before the source endpoint stop action. HiDriveController is not executed.',
-        'initial_speed_method':'Displacement over the first 0.20 s; source contains positions, not measured speeds.',
+        'method':'Exact source vertices. Cached speed uses the completed source segment (first segment at t=0). Live target position, speed and heading come from native esmini trajectory replay. Ego reference holds its last pose with zero speed after the trajectory ends; finish on the first integration tick after the source stop time. HiDriveController is not executed.',
+        'initial_speed_method':'Length of the first source segment divided by its duration (0.01 s).',
     })
-    return {'scenario':case,'frames':len(times),'duration_s':float(times[-1]),'initial_speed_kph':ego['speed']*3.6,'initial_heading_deg':math.degrees(ego['h'])}
+    return {'scenario':case,'frames':len(times),'duration_s':round(stop_time + .01, 8),'trajectory_duration_s':float(times[-1]),'initial_speed_kph':ego['speed']*3.6,'initial_heading_deg':math.degrees(ego['h'])}
 
 
 if __name__ == '__main__':

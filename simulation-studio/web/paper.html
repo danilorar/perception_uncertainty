@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>参考资料 · Simulation Studio</title>
+  <link rel="stylesheet" href="/paper.css">
+  <script src="/paper.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="heading"><span id="eyebrow">SIMULATION STUDIO / 参考资料</span><h1 id="title">正在读取论文…</h1><p id="byline"></p></div>
+    <nav id="downloads" hidden>
+      <a id="originalPdf" target="_blank" rel="noopener">打开完整 PDF ↗</a>
+      <a id="downloadPdf" download>下载 PDF</a>
+      <a id="publisher" target="_blank" rel="noopener">出版来源 ↗</a>
+    </nav>
+  </header>
+  <div id="readerControls" class="toolbar" hidden>
+    <button id="previous" type="button">← 上一页</button>
+    <form id="pageForm"><label for="pageNumber" id="pageLabel">PDF 页码</label><input id="pageNumber" type="number" min="1" required><span id="pageCount"></span><button id="goPage" type="submit">跳转</button></form>
+    <button id="next" type="button">下一页 →</button>
+    <button id="locateCitation" type="button" disabled>定位引用</button>
+    <label for="zoom" id="zoomLabel">缩放</label><select id="zoom"><option value="fit">适应窗口</option><option value="125">125%</option><option value="160">160%</option><option value="200">200%</option></select>
+  </div>
+  <div class="reading-context"><p id="location" role="status"></p><p id="hint"></p><div id="bookmarks"></div></div>
+  <main id="viewport" hidden><div id="pageWrap"><img id="pageImage" alt="论文原文页"><div id="highlights" aria-hidden="true"></div></div></main>
+  <p id="error" role="alert" hidden></p>
+</body>
+</html>

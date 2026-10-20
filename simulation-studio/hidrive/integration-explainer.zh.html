@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HiDrive AEB 接入说明</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* Layout: single reading column, file paths as mono "labels", code in recessed panels, one diagram up top. */
+:root {
+  --bg: #f5f8f7;
+  --surface: #ffffff;
+  --code-bg: #eaf0ee;
+  --fg: #17211f;
+  --muted: #5a6b67;
+  --line: #d3dedb;
+  --accent: #197f7a;
+  --accent-soft: #d8eeec;
+  --warn: #a8551d;
+  --warn-soft: #f6e6da;
+  --font-head: "IBM Plex Sans", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-body: "Noto Sans SC", "IBM Plex Sans", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111817; --surface: #172120; --code-bg: #1d2a28; --fg: #e3ece9; --muted: #98aaa5;
+    --line: #2c3b38; --accent: #4fc0b8; --accent-soft: #1d3634; --warn: #e39a63; --warn-soft: #36271c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111817; --surface: #172120; --code-bg: #1d2a28; --fg: #e3ece9; --muted: #98aaa5;
+  --line: #2c3b38; --accent: #4fc0b8; --accent-soft: #1d3634; --warn: #e39a63; --warn-soft: #36271c;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15.5px; line-height: 1.75; }
+.wrap { max-width: 860px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 40px; }
+header { display: grid; gap: 10px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--font-head); font-size: clamp(26px, 4.6vw, 36px); line-height: 1.25; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-head); font-size: 22px; line-height: 1.35; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--font-head); font-size: 16.5px; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); font-size: 16.5px; }
+section { display: grid; gap: 14px; min-width: 0; }
+.step-tag { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+code { font-family: var(--font-mono); font-size: .88em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; word-break: break-word; }
+pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; }
+pre code { background: none; padding: 0; font-size: inherit; word-break: normal; }
+.file { font-family: var(--font-mono); font-size: 13px; color: var(--accent); font-weight: 600; }
+.table-box { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 14.5px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+th { font-family: var(--font-head); font-size: 13px; color: var(--muted); font-weight: 600; background: var(--code-bg); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { white-space: nowrap; }
+.callout { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 14px 18px; border-radius: 0 8px 8px 0; display: grid; gap: 8px; }
+.callout h3 { color: var(--warn); }
+ol.flow { margin: 0; padding-left: 1.4em; display: grid; gap: 8px; max-width: 70ch; }
+ol.flow li::marker { font-family: var(--font-mono); color: var(--accent); }
+ul { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; max-width: 70ch; }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+.cmd-row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.cmd { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.cmd p { font-size: 14px; color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+footer { color: var(--muted); font-size: 13px; }
+</style>
+
+<style>
+a.vs-link { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--accent); }
+a.vs-link:hover, a.vs-link:focus-visible { border-bottom-style: solid; background: var(--code-bg); outline: none; }
+a.vs-link:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 3px; }
+a.vs-link code, pre a.vs-link { color: var(--accent); }
+.file.locked { color: var(--muted); }
+.file.locked::after { content: " \1F512"; font-size: .85em; }
+.root-bar { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.root-bar label { font-family: var(--font-head); font-size: 13px; font-weight: 600; color: var(--muted); }
+.root-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.root-row input { flex: 1 1 260px; min-width: 0; font: 13px var(--font-mono); color: var(--fg); background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.root-row input:focus-visible, .root-row button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.root-row button { font: 600 13px var(--font-head); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.root-bar p { font-size: 13.5px; color: var(--muted); max-width: none; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">TME180 · Simulation Studio · 2026-10-12</span>
+  <h1>HiDrive AEB 是怎么接进 Studio 的</h1>
+  <p class="lede"><strong>注意（2026-10-20）：本页描述的是已停用的 esmini 2.40 接入方式。</strong>控制器现已移植到 esmini 3.8.1 接口，源码放在 <code>AEB Controler (esmini 3.8.1)</code>，由 <code>hidrive/build.py</code> 编译进隔离的 <code>esmini-hidrive-v3.8.1</code>。现行说明见 <code>hidrive/README.md</code> 与 <code>hidrive/MIGRATE-3.8.1.zh.md</code>；下文的行号链接指向旧的 2.40 源码树。</p>
+  <p class="lede">一共分两层：先把控制器编译进一个独立的 esmini 2.40 程序，再让 Studio 调用这个程序跑老师的场景，并把输出转换成 Studio 原有的格式。控制器源码全程没有被修改，也没有被 AI 阅读。</p>
+</header>
+<div class="root-bar"><label for="root-path">本机项目路径</label><div class="root-row"><input id="root-path" type="text" spellcheck="false" autocomplete="off"><button type="button" id="root-reset">恢复默认</button></div><p>点击文件名或函数名，会用本机 VS Code 打开对应文件并跳到那一行。队友请把路径改成自己电脑上的项目文件夹；esmini 2.40 的文件要先运行一次 hidrive/build.py 才会存在。</p></div>
+
+<section>
+  <h2>整体结构</h2>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  A["AEB Controler/<br/>ControllerHiDrive.cpp/.hpp"] -->|"hidrive/build.py<br/>复制 + 编译"| B["esmini 2.40<br/>bin/esmini.exe"]
+  S["老师场景 DATA/*.xosc<br/>已声明 HiDriveController"] --> R
+  B --> R["hidrive_runner.py<br/>启动 esmini.exe"]
+  R -->|"CSV + 日志"| C["ego / truth / metrics .csv"]
+  C --> P["plots.py 曲线"]
+  C --> V["video.py 视频<br/>(esmini 3.8.1 回放)"]
+</pre>
+</div>
+  <p>Studio 平时用的 esmini 3.8.1 程序库里没有这个控制器，所以 HiDrive 走一条单独的路：Studio 不再自己一步步推进仿真，而是把整个场景交给 2.40 程序跑完，然后读取它的结果。</p>
+</section>
+
+<hr>
+
+<section>
+  <span class="step-tag">第一层 · 编译</span>
+  <h2>把控制器编进 esmini 2.40</h2>
+  <p>控制器是按 esmini 2.x 的接口写的，放进 3.8.1 编译会失败，所以单独下载了 esmini v2.40.0（提交 <code>c5f50c7</code>），放在 <code>esmini-lab/runtime/esmini-hidrive-v2.40.0/</code>。</p>
+  <p>esmini 要认识一个新控制器，需要改它<strong>公开的</strong>源码，一共三处。另外 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/CMakeLists.txt" data-line="242"><code>CMakeLists.txt</code></a> 有两处小改动，只是为了不去下载用不到的测试数据和外部依赖。</p>
+  <div class="table-box">
+  <table>
+    <thead><tr><th>esmini 2.40 中的文件</th><th>改了什么</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><span class="file locked" title="保密文件，不提供链接">Controllers/ControllerHiDrive.*</span></td><td>从 <code>AEB Controler/</code> 原样复制进来</td><td>Controllers 目录下的 .cpp 会被自动加入编译</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/Controllers/Controller.hpp" data-line="53"><span class="file">Controllers/Controller.hpp</span></a></td><td>控制器类型枚举里加一项 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/Controllers/Controller.hpp" data-line="53"><code>CONTROLLER_TYPE_HIDRIVE</code></a></td><td>控制器头文件会用到这个类型编号</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="26"><span class="file">ScenarioReader.cpp</span></a></td><td>加 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="26"><code>#include "ControllerHiDrive.hpp"</code></a></td><td>让场景读取器能看到控制器</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="78"><span class="file">ScenarioReader.cpp</span></a></td><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="76"><code>LoadControllers()</code></a> 里加一行注册</td><td>场景里写 <code>HiDriveController</code> 时，esmini 就会创建它</td></tr>
+    </tbody>
+  </table>
+  </div>
+<pre><code><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="78">// ScenarioReader.cpp</a>
+void ScenarioReader::LoadControllers()
+{
+    RegisterController("HiDriveController", InstantiateControllerHiDrive);
+    ...</code></pre>
+  <p>注册用的名字 <code>"HiDriveController"</code> 和老师场景文件里写的一致，所以场景文件本身不用改：</p>
+<pre><code>&lt;!-- <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="DATA/C_original_1549178.xosc" data-line="36">DATA/C_original_1549178.xosc</a>，object_1 = 自车 --&gt;
+&lt;Controller name="HiDriveController"&gt;
+  &lt;Property name="timeGap" value="1.0" /&gt;
+  &lt;Property name="mode" value="additive"/&gt;
+  ...</code></pre>
+
+  <h3>编译怎么做</h3>
+  <p><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="97"><span class="file">simulation-studio/hidrive/build.py</span></a> 把上面这些步骤合成了一条命令：</p>
+  <ol class="flow">
+    <li>esmini 2.40 源码不存在时，从 GitHub 下载 v2.40.0。</li>
+    <li>按 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="27"><code>ENGINE_EDITS</code></a> 列表修改公开文件。已经改过的会自动跳过，重复运行也安全。</li>
+    <li>从项目已有的 esmini 3.8.1 完整安装里复制 OSG / OSI / SUMO 依赖包，不用重新下载。</li>
+    <li>用 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="114"><code>shutil.copy2</code></a> 复制两个控制器文件，只复制，不打开。</li>
+    <li>CMake 配置并编译 <code>esmini</code> 目标（Release, x64），完成后把 exe 复制到 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="126"><code>bin/esmini.exe</code></a>。</li>
+  </ol>
+<pre><code>cmake -S esmini-hidrive-v2.40.0 -B build -A x64 -DUSE_OSG=ON -DUSE_OSI=ON -DUSE_SUMO=ON \
+      -DUSE_GTEST=OFF -DDOWNLOAD_EXTERNALS=OFF ...
+cmake --build build --config Release --target esmini</code></pre>
+  <p>编译输出只写进 <code>esmini-lab/evidence/hidrive-build.log</code>，不在终端显示，因为编译报错可能引用控制器源码。增量编译大约 6 秒，第一次完整编译要几分钟。</p>
+</section>
+
+<div class="callout">
+  <h3>关键的坑：没有画面就崩溃</h3>
+  <p>编译成功后，用常见的无窗口参数 <code>--headless</code> 跑场景，程序在仿真时间约 0.05 s 时直接退出，日志里没有任何错误。换了三种时间步长（0.05 / 0.01 / 0.001 s）都在同一时刻崩溃，打开画面窗口就能完整跑完 10 s。由此判断控制器在用画面（viewer）对象，没有画面时就访问了空指针。</p>
+  <p>解决办法来自 esmini 2.40 的公开源码：</p>
+  <ul>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/PlayerBase/playerbase.cpp" data-line="1774"><code>playerbase.cpp</code></a>：只要命令行里有 <code>--window</code>，就会创建 viewer。</li>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ViewerBase/viewer.cpp" data-line="1243"><code>viewer.cpp</code></a> 的 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ViewerBase/viewer.cpp" data-line="1214"><code>InitTraits()</code></a>：如果同时有 <code>--headless</code>，就设置 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ViewerBase/viewer.cpp" data-line="1248"><code>traits-&gt;pbuffer = true</code></a>，也就是在显存里离屏渲染，不在桌面上开窗口。</li>
+  </ul>
+  <p>所以两个参数一起用，控制器拿到了它需要的 viewer，桌面上也不会弹窗。控制器和引擎都不用改。</p>
+<pre><code>esmini.exe --osc scene.xosc <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="155">--headless --window 0 0 320 180</a> ...</code></pre>
+</div>
+
+<hr>
+
+<section>
+  <span class="step-tag">第二层 · 调用</span>
+  <h2>Studio 怎么调用它</h2>
+  <p>核心是新文件 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="1"><span class="file">simulation-studio/hidrive_runner.py</span></a> 里的 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="124"><code>run_hidrive()</code></a>，每次运行按顺序做这些事：</p>
+  <ol class="flow">
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="43"><code>check_build()</code></a>：确认 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="43"><code>bin/esmini.exe</code></a> 存在；比较 <code>AEB Controler/</code> 里的文件和编译用副本的<strong>大小与修改时间</strong>，不一致就报错，提示先重新编译。</li>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="53"><code>build_hidrive_scene()</code></a>：把老师的场景复制到本次运行目录，只把道路和车辆目录改成绝对路径，<code>HiDriveController</code> 和它的参数原样保留。</li>
+    <li>启动 2.40 程序，参数包括上面的 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="155"><code>--headless --window</code></a>、Studio 设置的时间步长 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="156"><code>--fixed_timestep</code></a>、碰撞检测 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="156"><code>--collision</code></a>，以及两份输出：<a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="157"><code>--csv_logger</code></a> 和日志文件。</li>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="68"><code>read_esmini_csv()</code></a>：读 esmini 的 CSV，得到每一帧每辆车的位置、速度、朝向、包围盒和碰撞对象。</li>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="92"><code>read_log_values()</code></a>：读日志里控制器自己打印的 <code>LOG_VALUE:AEB_active</code> 和 <code>LOG_VALUE:Acceleration</code>，分别作为"AEB 触发"和"指令加速度"。</li>
+    <li>转换成 Studio 的标准文件：<a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="169"><code>ego.csv</code></a>、<code>truth.csv</code>、<code>observations.csv</code>、<code>metrics.csv</code>。最小间距和 TTC 用真实位置计算。首次碰撞的那一帧之后就截断，和原生 ACC 的规则一致。</li>
+    <li>交给已有的 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/runner.py" data-line="79"><code>finish_run()</code></a>：生成曲线（<a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/plots.py" data-line="11"><code>plots.py</code></a>）和 MP4（<a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/video.py" data-line="40"><code>video.py</code></a> 用 esmini 3.8.1 回放 <code>truth.csv</code>）。</li>
+  </ol>
+
+  <h3>其他改动的文件</h3>
+  <div class="table-box">
+  <table>
+    <thead><tr><th>文件</th><th>改动</th></tr></thead>
+    <tbody>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/settings.py" data-line="288"><span class="file">settings.py</span></a></td><td>新增路径 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/settings.py" data-line="20"><code>HIDRIVE_RUNTIME</code></a>、<code>HIDRIVE_SOURCE</code>；控制器选项加 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/settings.py" data-line="231"><code>'hidrive'</code></a>；选 hidrive 时拒绝 OU 测距误差，并使用场景自带的初速和航向。</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/runner.py" data-line="174"><span class="file">runner.py</span></a></td><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/runner.py" data-line="166"><code>run()</code></a> 里加三行：<a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/runner.py" data-line="174"><code>controller == 'hidrive'</code></a> 时转给 <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="124"><code>run_hidrive()</code></a>。</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/plots.py" data-line="111"><span class="file">plots.py</span></a></td><td>加速度曲线的图例改为 "HiDrive controller acceleration (esmini log)"。</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/web/index.html" data-line="125"><span class="file">web/index.html</span></a></td><td>控制器下拉框加 "HiDrive AEB"，以及一段说明文字。</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/web/app.js" data-line="476"><span class="file">web/app.js</span></a></td><td>选 HiDrive 时锁定为理想探测，禁用传感器范围、视场和观测周期，初速和航向改为只读。</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/test_hidrive.py" data-line="19"><span class="file">test_hidrive.py</span></a></td><td>4 个测试：配置校验、场景生成、CSV 和日志解析、完整运行一次。</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/AGENTS.md" data-line="23"><span class="file">AGENTS.md</span></a>, <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/README.md" data-line="1"><span class="file">hidrive/README.md</span></a></td><td>写明禁止 AI 阅读控制器文件，以及使用方法。</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>日常怎么用、什么时候要编译</h2>
+  <div class="cmd-row">
+    <div class="cmd">
+      <h3>跑实验</h3>
+      <p>不需要编译。在 Studio 里把控制器选成 HiDrive AEB，再点"运行新模拟"。</p>
+    </div>
+    <div class="cmd">
+      <h3>控制器文件改了</h3>
+      <p>在 <code>simulation-studio</code> 目录运行一次：</p>
+<pre><code><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="97">.venv\Scripts\python.exe hidrive\build.py</a></code></pre>
+    </div>
+    <div class="cmd">
+      <h3>新电脑第一次用</h3>
+      <p>先装好 esmini 3.8.1 完整版和 Visual Studio C++ 工具链，再运行同一条 build 命令，它会自动下载 2.40 源码。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>目前的限制</h2>
+  <ul>
+    <li><strong>感知误差加不进去。</strong>控制器用的是自己内部的感知，Studio 的 OU 测距误差到不了它，所以选 HiDrive 时只能用理想探测。要加误差，得先知道控制器从哪个接口读取前车距离。</li>
+    <li>"AEB 触发"和"加速度"来自控制器自己写进日志的数值；位置、速度和碰撞判断来自 esmini 的真实状态。</li>
+    <li>引擎是 esmini 2.40，和 Studio 其余部分用的 3.8.1 不是同一版本。视频回放仍然用 3.8.1。</li>
+    <li>自车速度曲线开头的小锯齿来自老师轨迹文件本身的坐标精度（0.01 m），不是控制器造成的。</li>
+  </ul>
+</section>
+
+<footer>三个老师场景的结果：1549178 和 1554254 没有碰撞，AEB 分别在 3.31 s 和 3.20 s 触发；1554431 在 3.23 s 触发，5.49 s 时以 34 km/h 撞上前车。</footer>
+</div>
+
+<script>
+(function () {
+  var DEFAULT = "E:\\Chalmers course\\P5\\TME180 project", KEY = 'hidrive-explainer-root';
+  var input = document.getElementById('root-path');
+  function saved() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function remember(value) { try { localStorage.setItem(KEY, value); } catch (e) {} }
+  function apply() {
+    var root = (input.value.trim() || DEFAULT).replace(/\\/g, '/').replace(/\/+$/, '');
+    document.querySelectorAll('a.vs-link').forEach(function (a) {
+      var target = root + '/' + a.dataset.path;
+      a.href = 'vscode://file/' + encodeURI(target) + ':' + a.dataset.line;
+      a.title = "用 VS Code 打开" + ': ' + a.dataset.path + ':' + a.dataset.line;
+    });
+  }
+  input.value = saved() || DEFAULT;
+  input.addEventListener('input', function () { remember(input.value); apply(); });
+  document.getElementById('root-reset').addEventListener('click', function () { input.value = DEFAULT; remember(DEFAULT); apply(); });
+  apply();
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({ startOnLoad: true, securityLevel: 'strict',
+  theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default' });
+</script>
+</body>
+</html>

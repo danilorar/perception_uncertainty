@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HiDrive AEB Integration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+/* Layout: single reading column, file paths as mono "labels", code in recessed panels, one diagram up top. */
+:root {
+  --bg: #f5f8f7;
+  --surface: #ffffff;
+  --code-bg: #eaf0ee;
+  --fg: #17211f;
+  --muted: #5a6b67;
+  --line: #d3dedb;
+  --accent: #197f7a;
+  --warn: #a8551d;
+  --warn-soft: #f6e6da;
+  --font-head: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+  --font-body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111817; --surface: #172120; --code-bg: #1d2a28; --fg: #e3ece9; --muted: #98aaa5;
+    --line: #2c3b38; --accent: #4fc0b8; --warn: #e39a63; --warn-soft: #36271c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111817; --surface: #172120; --code-bg: #1d2a28; --fg: #e3ece9; --muted: #98aaa5;
+  --line: #2c3b38; --accent: #4fc0b8; --warn: #e39a63; --warn-soft: #36271c;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16.5px; line-height: 1.65; }
+.wrap { max-width: 860px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 40px; }
+header { display: grid; gap: 10px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--font-head); font-size: clamp(26px, 4.6vw, 36px); line-height: 1.2; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-head); font-size: 22px; line-height: 1.3; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--font-head); font-size: 16.5px; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); font-size: 17.5px; }
+section { display: grid; gap: 14px; min-width: 0; }
+.step-tag { font-family: var(--font-mono); font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+code { font-family: var(--font-mono); font-size: .82em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; word-break: break-word; }
+pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; }
+pre code { background: none; padding: 0; font-size: inherit; word-break: normal; }
+.file { font-family: var(--font-mono); font-size: 13px; color: var(--accent); font-weight: 600; }
+.table-box { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+th { font-family: var(--font-head); font-size: 13px; color: var(--muted); font-weight: 600; background: var(--code-bg); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { white-space: nowrap; }
+.callout { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 14px 18px; border-radius: 0 8px 8px 0; display: grid; gap: 8px; }
+.callout h3 { color: var(--warn); }
+ol.flow { margin: 0; padding-left: 1.4em; display: grid; gap: 8px; max-width: 70ch; }
+ol.flow li::marker { font-family: var(--font-mono); color: var(--accent); }
+ul { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; max-width: 70ch; }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+.cmd-row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.cmd { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.cmd p { font-size: 15px; color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+footer { color: var(--muted); font-size: 14px; }
+</style>
+
+<style>
+a.vs-link { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--accent); }
+a.vs-link:hover, a.vs-link:focus-visible { border-bottom-style: solid; background: var(--code-bg); outline: none; }
+a.vs-link:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 3px; }
+a.vs-link code, pre a.vs-link { color: var(--accent); }
+.file.locked { color: var(--muted); }
+.file.locked::after { content: " \1F512"; font-size: .85em; }
+.root-bar { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.root-bar label { font-family: var(--font-head); font-size: 13px; font-weight: 600; color: var(--muted); }
+.root-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.root-row input { flex: 1 1 260px; min-width: 0; font: 13px var(--font-mono); color: var(--fg); background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.root-row input:focus-visible, .root-row button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.root-row button { font: 600 13px var(--font-head); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.root-bar p { font-size: 13.5px; color: var(--muted); max-width: none; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">TME180 · Simulation Studio · 2026-10-12</span>
+  <h1>How HiDrive AEB was wired into Studio</h1>
+  <p class="lede"><strong>Note (2026-10-20): this page describes the retired esmini 2.40 integration.</strong> The controller has been ported to the esmini 3.8.1 API; its source lives in <code>AEB Controler (esmini 3.8.1)</code> and <code>hidrive/build.py</code> compiles it into the isolated <code>esmini-hidrive-v3.8.1</code>. See <code>hidrive/README.md</code> and <code>hidrive/MIGRATE-3.8.1.zh.md</code> for the current setup; line links below point to the old 2.40 tree.</p>
+  <p class="lede">There are two layers. First, the controller is compiled into a separate esmini 2.40 executable. Then Studio calls that executable to run the teacher's scenarios and converts its output into Studio's existing file format. The controller source was never modified and was never read by an AI.</p>
+</header>
+<div class="root-bar"><label for="root-path">Local project folder</label><div class="root-row"><input id="root-path" type="text" spellcheck="false" autocomplete="off"><button type="button" id="root-reset">Reset</button></div><p>Click a file or function name to open it in VS Code on this computer at that line. Teammates: change the path to the project folder on your own machine. The esmini 2.40 files exist only after running hidrive/build.py once.</p></div>
+
+<section>
+  <h2>Overall structure</h2>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  A["AEB Controler/<br/>ControllerHiDrive.cpp/.hpp"] -->|"hidrive/build.py<br/>copy + compile"| B["esmini 2.40<br/>bin/esmini.exe"]
+  S["Teacher scenario DATA/*.xosc<br/>already declares HiDriveController"] --> R
+  B --> R["hidrive_runner.py<br/>launches esmini.exe"]
+  R -->|"CSV + log"| C["ego / truth / metrics .csv"]
+  C --> P["plots.py charts"]
+  C --> V["video.py video<br/>(esmini 3.8.1 replay)"]
+</pre>
+</div>
+  <p>The esmini 3.8.1 library Studio normally uses does not contain this controller, so HiDrive takes a separate path. Studio does not step the simulation itself. It hands the whole scenario to the 2.40 executable, lets it run to the end, and then reads the results.</p>
+</section>
+
+<hr>
+
+<section>
+  <span class="step-tag">LAYER 1 · BUILD</span>
+  <h2>Compiling the controller into esmini 2.40</h2>
+  <p>The controller is written against the esmini 2.x API and does not compile inside 3.8.1. A separate copy of esmini v2.40.0 (commit <code>c5f50c7</code>) therefore lives in <code>esmini-lab/runtime/esmini-hidrive-v2.40.0/</code>.</p>
+  <p>For esmini to recognise a new controller, three places in its <strong>public</strong> source have to change. Two small edits to <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/CMakeLists.txt" data-line="242"><code>CMakeLists.txt</code></a> also stop it from downloading test data and external packages that are not needed.</p>
+  <div class="table-box">
+  <table>
+    <thead><tr><th>File in esmini 2.40</th><th>Change</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><span class="file locked" title="Confidential file, not linked">Controllers/ControllerHiDrive.*</span></td><td>Copied unchanged from <code>AEB Controler/</code></td><td>Every .cpp in the Controllers folder is compiled automatically</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/Controllers/Controller.hpp" data-line="53"><span class="file">Controllers/Controller.hpp</span></a></td><td>Adds <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/Controllers/Controller.hpp" data-line="53"><code>CONTROLLER_TYPE_HIDRIVE</code></a> to the controller-type enum</td><td>The controller header uses this type id</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="26"><span class="file">ScenarioReader.cpp</span></a></td><td>Adds <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="26"><code>#include "ControllerHiDrive.hpp"</code></a></td><td>Lets the scenario reader see the controller</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="78"><span class="file">ScenarioReader.cpp</span></a></td><td>Adds one registration line in <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="76"><code>LoadControllers()</code></a></td><td>When a scenario names <code>HiDriveController</code>, esmini creates it</td></tr>
+    </tbody>
+  </table>
+  </div>
+<pre><code><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp" data-line="78">// ScenarioReader.cpp</a>
+void ScenarioReader::LoadControllers()
+{
+    RegisterController("HiDriveController", InstantiateControllerHiDrive);
+    ...</code></pre>
+  <p>The registered name <code>"HiDriveController"</code> matches the name already used in the teacher's scenario files, so the scenarios need no changes:</p>
+<pre><code>&lt;!-- <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="DATA/C_original_1549178.xosc" data-line="36">DATA/C_original_1549178.xosc</a>, object_1 = ego --&gt;
+&lt;Controller name="HiDriveController"&gt;
+  &lt;Property name="timeGap" value="1.0" /&gt;
+  &lt;Property name="mode" value="additive"/&gt;
+  ...</code></pre>
+
+  <h3>How the build works</h3>
+  <p><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="97"><span class="file">simulation-studio/hidrive/build.py</span></a> does all of the above in one command:</p>
+  <ol class="flow">
+    <li>If the esmini 2.40 source is missing, it downloads v2.40.0 from GitHub.</li>
+    <li>It applies the public-file edits in the <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="27"><code>ENGINE_EDITS</code></a> list. Edits already present are skipped, so running it again is safe.</li>
+    <li>It copies the OSG / OSI / SUMO packages from the project's existing esmini 3.8.1 full install instead of downloading them.</li>
+    <li>It copies the two controller files with <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="114"><code>shutil.copy2</code></a>. They are copied, never opened.</li>
+    <li>It configures with CMake, builds the <code>esmini</code> target (Release, x64) and copies the exe to <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="126"><code>bin/esmini.exe</code></a>.</li>
+  </ol>
+<pre><code>cmake -S esmini-hidrive-v2.40.0 -B build -A x64 -DUSE_OSG=ON -DUSE_OSI=ON -DUSE_SUMO=ON \
+      -DUSE_GTEST=OFF -DDOWNLOAD_EXTERNALS=OFF ...
+cmake --build build --config Release --target esmini</code></pre>
+  <p>Compiler output goes only to <code>esmini-lab/evidence/hidrive-build.log</code> and is not printed to the terminal, because compiler errors may quote the controller source. An incremental build takes about 6 seconds; the first full build takes a few minutes.</p>
+</section>
+
+<div class="callout">
+  <h3>The key problem: it crashes without a viewer</h3>
+  <p>After the build succeeded, running a scenario with the usual no-window flag <code>--headless</code> made the program exit at about 0.05 s of simulation time, with nothing in the log. Three time steps (0.05 / 0.01 / 0.001 s) all crashed at the same simulation time, while running with a visible window completed the full 10 s. The conclusion: the controller uses the viewer object and dereferences a null pointer when there is no viewer.</p>
+  <p>The fix comes from esmini 2.40's public source:</p>
+  <ul>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/PlayerBase/playerbase.cpp" data-line="1774"><code>playerbase.cpp</code></a>: a viewer is created whenever <code>--window</code> is on the command line.</li>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ViewerBase/viewer.cpp" data-line="1214"><code>InitTraits()</code></a> in <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ViewerBase/viewer.cpp" data-line="1243"><code>viewer.cpp</code></a>: if <code>--headless</code> is also set, it sets <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="esmini-lab/runtime/esmini-hidrive-v2.40.0/EnvironmentSimulator/Modules/ViewerBase/viewer.cpp" data-line="1248"><code>traits-&gt;pbuffer = true</code></a>, which renders off-screen in GPU memory instead of opening a desktop window.</li>
+  </ul>
+  <p>Using both flags together gives the controller the viewer it needs, and no window appears on the desktop. Neither the controller nor the engine had to change.</p>
+<pre><code>esmini.exe --osc scene.xosc <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="155">--headless --window 0 0 320 180</a> ...</code></pre>
+</div>
+
+<hr>
+
+<section>
+  <span class="step-tag">LAYER 2 · RUN</span>
+  <h2>How Studio calls it</h2>
+  <p>The core is <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="124"><code>run_hidrive()</code></a> in the new file <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="1"><span class="file">simulation-studio/hidrive_runner.py</span></a>. Each run goes through these steps in order:</p>
+  <ol class="flow">
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="43"><code>check_build()</code></a>: checks that <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="43"><code>bin/esmini.exe</code></a> exists, and compares the <strong>size and modification time</strong> of the files in <code>AEB Controler/</code> with the copies used for the build. If they differ, it stops and asks for a rebuild.</li>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="53"><code>build_hidrive_scene()</code></a>: copies the teacher's scenario into the run folder and only turns the road and vehicle-catalog paths into absolute paths. <code>HiDriveController</code> and its parameters stay as they are.</li>
+    <li>Launches the 2.40 executable with <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="155"><code>--headless --window</code></a> (above), Studio's time step via <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="156"><code>--fixed_timestep</code></a>, collision detection via <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="156"><code>--collision</code></a>, and two outputs: <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="157"><code>--csv_logger</code></a> and a log file.</li>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="68"><code>read_esmini_csv()</code></a>: reads esmini's CSV to get each vehicle's position, speed, heading, bounding box and collision partners at every frame.</li>
+    <li><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="92"><code>read_log_values()</code></a>: reads the <code>LOG_VALUE:AEB_active</code> and <code>LOG_VALUE:Acceleration</code> lines the controller writes to the log, used as "AEB trigger" and "commanded acceleration".</li>
+    <li>Converts everything into Studio's standard files: <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="169"><code>ego.csv</code></a>, <code>truth.csv</code>, <code>observations.csv</code>, <code>metrics.csv</code>. Minimum gap and TTC are computed from true positions. Output is cut at the first collision frame, the same rule as the native ACC.</li>
+    <li>Hands over to the existing <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/runner.py" data-line="79"><code>finish_run()</code></a>, which produces the charts (<a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/plots.py" data-line="11"><code>plots.py</code></a>) and the MP4 (<a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/video.py" data-line="40"><code>video.py</code></a> replays <code>truth.csv</code> in esmini 3.8.1).</li>
+  </ol>
+
+  <h3>Other files changed</h3>
+  <div class="table-box">
+  <table>
+    <thead><tr><th>File</th><th>Change</th></tr></thead>
+    <tbody>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/settings.py" data-line="288"><span class="file">settings.py</span></a></td><td>New paths <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/settings.py" data-line="20"><code>HIDRIVE_RUNTIME</code></a> and <code>HIDRIVE_SOURCE</code>; <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/settings.py" data-line="231"><code>'hidrive'</code></a> added to the controller options. With hidrive selected, OU range error is rejected and the scenario's own initial speed and heading are used.</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/runner.py" data-line="174"><span class="file">runner.py</span></a></td><td>Three lines in <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/runner.py" data-line="166"><code>run()</code></a>: when <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/runner.py" data-line="174"><code>controller == 'hidrive'</code></a>, hand off to <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive_runner.py" data-line="124"><code>run_hidrive()</code></a>.</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/plots.py" data-line="111"><span class="file">plots.py</span></a></td><td>The acceleration chart legend reads "HiDrive controller acceleration (esmini log)".</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/web/index.html" data-line="125"><span class="file">web/index.html</span></a></td><td>Adds "HiDrive AEB" to the controller dropdown, plus a short hint.</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/web/app.js" data-line="476"><span class="file">web/app.js</span></a></td><td>With HiDrive selected, perception is locked to ideal detection, sensor range, field of view and observation period are disabled, and initial speed and heading become read-only.</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/test_hidrive.py" data-line="19"><span class="file">test_hidrive.py</span></a></td><td>Four tests: config validation, scene generation, CSV and log parsing, and one full run.</td></tr>
+      <tr><td><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/AGENTS.md" data-line="23"><span class="file">AGENTS.md</span></a>, <a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/README.md" data-line="1"><span class="file">hidrive/README.md</span></a></td><td>State that AI agents must not read the controller files, and how to use the integration.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h2>Daily use and when to rebuild</h2>
+  <div class="cmd-row">
+    <div class="cmd">
+      <h3>Running experiments</h3>
+      <p>No build needed. In Studio, set the controller to HiDrive AEB and click "Run new simulation".</p>
+    </div>
+    <div class="cmd">
+      <h3>Controller files changed</h3>
+      <p>Run this once from the <code>simulation-studio</code> folder:</p>
+<pre><code><a class="vs-link" href="vscode://file/" target="_blank" rel="noopener" data-path="simulation-studio/hidrive/build.py" data-line="97">.venv\Scripts\python.exe hidrive\build.py</a></code></pre>
+    </div>
+    <div class="cmd">
+      <h3>First time on a new machine</h3>
+      <p>Install the full esmini 3.8.1 and the Visual Studio C++ toolchain first, then run the same build command. It downloads the 2.40 source automatically.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Current limitations</h2>
+  <ul>
+    <li><strong>Perception error cannot be injected.</strong> The controller uses its own internal perception, so Studio's OU range error never reaches it, and only ideal detection is allowed with HiDrive. Adding error requires knowing which interface the controller reads the lead-vehicle distance from.</li>
+    <li>"AEB trigger" and "acceleration" come from values the controller writes to the log. Position, speed and collisions come from esmini's true state.</li>
+    <li>The engine is esmini 2.40, not the 3.8.1 used by the rest of Studio. Video replay still uses 3.8.1.</li>
+    <li>The small saw-tooth at the start of the ego speed curve comes from the coordinate precision (0.01 m) of the teacher's trajectory file, not from the controller.</li>
+  </ul>
+</section>
+
+<footer>Results on the three teacher scenarios: 1549178 and 1554254 have no collision, with AEB triggering at 3.31 s and 3.20 s. In 1554431 AEB triggers at 3.23 s and the ego hits the lead vehicle at 5.49 s at 34 km/h.</footer>
+</div>
+
+<script>
+(function () {
+  var DEFAULT = "E:\\Chalmers course\\P5\\TME180 project", KEY = 'hidrive-explainer-root';
+  var input = document.getElementById('root-path');
+  function saved() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function remember(value) { try { localStorage.setItem(KEY, value); } catch (e) {} }
+  function apply() {
+    var root = (input.value.trim() || DEFAULT).replace(/\\/g, '/').replace(/\/+$/, '');
+    document.querySelectorAll('a.vs-link').forEach(function (a) {
+      var target = root + '/' + a.dataset.path;
+      a.href = 'vscode://file/' + encodeURI(target) + ':' + a.dataset.line;
+      a.title = "Open in VS Code" + ': ' + a.dataset.path + ':' + a.dataset.line;
+    });
+  }
+  input.value = saved() || DEFAULT;
+  input.addEventListener('input', function () { remember(input.value); apply(); });
+  document.getElementById('root-reset').addEventListener('click', function () { input.value = DEFAULT; remember(DEFAULT); apply(); });
+  apply();
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({ startOnLoad: true, securityLevel: 'strict',
+  theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default' });
+</script>
+</body>
+</html>

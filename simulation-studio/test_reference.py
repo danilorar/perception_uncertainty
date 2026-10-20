@@ -21,8 +21,10 @@ class ReferenceTests(unittest.TestCase):
                 def conditions(tree):
                     return [(e.tag, e.attrib) for e in tree.find('Storyboard/StopTrigger').iter()]
                 self.assertEqual(conditions(original), conditions(recorded))
-                self.assertEqual(ref.times[-1], ref.duration)
-                self.assertEqual(len(ref.times), round(ref.duration / .01) + 1)
+                self.assertEqual(ref.times[-1], ref.meta['trajectory_duration_s'])
+                self.assertEqual(len(ref.times), round(ref.times[-1] / .01) + 1)
+                self.assertEqual(ref.duration, 10.01)
+                self.assertTrue(all(s['speed'] == 0 for s in ref.states(ref.duration)))
                 self.assertTrue(all(abs(b-a-.01)<1e-7 for a,b in zip(ref.times,ref.times[1:])))
                 ref.states(ref.duration)
                 with self.assertRaises(ValueError):

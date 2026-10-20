@@ -1,0 +1,13 @@
+:root { color-scheme: light; --bg:#eef2f6; --surface:#fff; --ink:#24394b; --muted:#64798b; --line:#d8e0e8; --accent:#126a91; }
+html[data-theme="dark"] { color-scheme:dark; --bg:#151c24; --surface:#202c39; --ink:#e5edf4; --muted:#a9b9c8; --line:#39495b; --accent:#87c8ea; }
+* { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.6 system-ui,"Microsoft YaHei",sans-serif; }
+header { padding:24px 32px 18px; background:var(--surface); border-bottom:1px solid var(--line); }
+.heading { max-width:1200px; } #eyebrow { font-size:10px; letter-spacing:1.6px; color:var(--muted); } h1 { margin:7px 0; font-size:22px; line-height:1.4; } p { margin:6px 0; } #byline { color:var(--muted); }
+nav { display:flex; flex-wrap:wrap; gap:12px 24px; margin-top:15px; } a { color:var(--accent); text-underline-offset:3px; }
+.toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; position:sticky; top:0; z-index:2; padding:12px 32px; background:var(--surface); border-bottom:1px solid var(--line); box-shadow:0 2px 6px #00000008; }
+button,input,select { border:1px solid var(--line); border-radius:6px; padding:7px 10px; color:var(--ink); background:var(--surface); font:inherit; }
+button { cursor:pointer; } button:hover { border-color:var(--accent); } button:disabled { opacity:.4; cursor:default; } :focus-visible { outline:2px solid var(--accent); outline-offset:3px; } input { width:68px; } form { display:flex; align-items:center; gap:8px; } #zoomLabel { margin-left:auto; }
+.reading-context { padding:14px 32px 18px; } #location { font-weight:600; } #hint { color:var(--muted); font-size:12px; } #bookmarks { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; } #bookmarks a { background:var(--surface); border:1px solid var(--line); padding:5px 10px; border-radius:5px; font-size:12px; }
+main { overflow:auto; padding:0 24px 32px; } #pageWrap { position:relative; width:min(100%,1050px); margin:0 auto; background:#fff; box-shadow:0 4px 24px #152e4820; } #pageImage { display:block; width:100%; height:auto; } #highlights { position:absolute; inset:0; pointer-events:none; } .word-highlight { position:absolute; background:#ffdc3c66; box-shadow:0 0 0 2px #edb100b3; border-radius:1px; }
+#error { padding:20px 32px; color:#bc3f32; } [hidden] { display:none!important; }
+@media(max-width:650px) { header,.toolbar,.reading-context { padding-left:16px; padding-right:16px; } h1 { font-size:18px; } main { padding:0 8px 20px; } #zoomLabel { margin-left:0; } .toolbar { gap:8px; } button,input,select { font-size:12px; } }
