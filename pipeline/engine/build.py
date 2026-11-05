@@ -215,7 +215,7 @@ def build(*, with_controllers=True, cmake=None, jobs=None):
     print('Configuring esmini (the first run downloads about 1 GB of dependencies and models)...', flush=True)
     if run_logged(configure_command(cmake), log):
         raise RuntimeError(f'CMake configuration failed. Read the log: {log}')
-    print(f'Compiling esmini with {len(selected)} controller(s), {jobs} jobs (the first run takes 10-30 minutes)...', flush=True)
+    print(f'Compiling esmini with {len(selected)} controller(s), {jobs} jobs (the first run takes a few minutes)...', flush=True)
     if run_logged(compile_command(cmake, jobs), log):
         raise RuntimeError(f'Compilation failed. Read the log: {log}')
     install_binaries()

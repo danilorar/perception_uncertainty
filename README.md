@@ -44,8 +44,8 @@ python -m pipeline setup
 python -m unittest discover tests
 ```
 
-`setup` downloads esmini 3.8.1 and compiles it with the controllers. The first time takes 10-30 minutes.
-Run it again whenever a controller or `pipeline/engine/PerceptionNoise.hpp` changes; a run refuses to start on a stale
+`setup` downloads esmini 3.8.1 and about 1 GB of dependencies, then compiles it with the controllers. The first time takes a
+few minutes. Run it again whenever a controller or `pipeline/engine/PerceptionNoise.hpp` changes; a run refuses to start on a stale
 build.
 
 ## Run one simulation
@@ -200,5 +200,6 @@ Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`,
 - `gidas_*` are the three scenario IDs. The data are TASC data, even where a file says GIDAS.
 - The course does not allow a Kalman filter, so controllers get the observations directly.
 - The same seed gives the same result on the same machine. Windows and macOS may differ slightly.
+- macOS was tested on a cloud Mac with no display, so `replay` has not been tried there yet.
 - If a Windows build fails on long paths, set `TME180_RUNTIME` to a short folder, such as `C:\t`, and run `setup` again.
 - AI agents must not read the HiDrive sources: see `pipeline/controllers/hidrive/AGENTS.md`.

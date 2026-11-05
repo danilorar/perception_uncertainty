@@ -27,8 +27,8 @@ def write_versions(out, controller, build_info):
 
 
 def run_esmini(out, c, noise_args):
-    # Some controllers need a viewer object; --headless with --window gives an off-screen viewer.
-    args = [ESMINI, '--osc', out / 'scene.xosc', '--headless', '--window', '0', '0', '320', '180',
+    # --headless alone opens no graphics at all. Adding --window crashes where no graphics context exists.
+    args = [ESMINI, '--osc', out / 'scene.xosc', '--headless',
             '--fixed_timestep', c['dt_s'], '--collision', '--seed', '0',
             '--csv_logger', out / 'esmini.csv', '--record', out / 'replay.dat',
             '--logfile_path', out / 'esmini.log', '--disable_stdout', '--path', ENGINE / 'resources',
