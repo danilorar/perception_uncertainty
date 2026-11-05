@@ -1,1 +1,1 @@
-{"scenario": "gidas_1549178", "uncertainty": "distance_ou_range", "noise_reference_mae_pct": 5.0, "seed": 0}
+{"scenario": "gidas_1549178", "errors": [{"type": "ou", "mae_pct": 5.0}], "seed": 0}

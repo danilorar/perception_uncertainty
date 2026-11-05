@@ -1,4 +1,4 @@
-"""Frame sequences for the Detection and Identification range-error factors.
+"""Frame sequences for the detection and identification plugins (a helper, not a plugin).
 
 Port of Zhuo Ma's DetectionDropout and MarkovDropout (branch feature/esmini-perception,
 commit 484675b, experiments/esmini-perception/simulation/acc_cpp/src/perception.cpp):
@@ -83,3 +83,10 @@ def wrong_class_steps(factors, seed, ident, dt_s, steps):
     states = markov_frames(factors['wrong_rate'], factors['wrong_mean_s'], period, seed,
                            ident + IDENTIFICATION_ID_OFFSET, frames)
     return hold_per_step(states, period, dt_s, steps)
+
+
+def check_period(period_s, mean_s, dt_s):
+    if abs(period_s / dt_s - round(period_s / dt_s)) > 1e-9:
+        raise ValueError('sensor_period_s must be a whole number of time steps')
+    if mean_s < period_s:
+        raise ValueError('a mean duration cannot be shorter than sensor_period_s')

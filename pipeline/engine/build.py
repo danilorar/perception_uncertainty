@@ -3,8 +3,8 @@
 Works on Windows (Visual Studio) and macOS (Xcode command line tools). Controller sources are
 copied as opaque compiler inputs: this script never opens, parses, hashes or prints them.
 Compiler output goes to a log file only, and this script never reads that log.
-Only public esmini files are edited: controller registration, the --perception_noise option and
-the error hook around each controller step (see PerceptionNoise.hpp).
+Only public esmini files are edited: controller registration, the --perception_bridge option and
+the bridge around each controller step (see PerceptionBridge.hpp).
 """
 import json
 import os
@@ -16,7 +16,7 @@ import urllib.request
 import zipfile
 
 from .. import controllers as controller_registry
-from ..common import BUILD_INFO, ENGINE, ESMINI, EXE_SUFFIX, NO_WINDOW, NOISE_HEADER, RUNTIME, WINDOWS, sha256, write_json
+from ..common import BRIDGE_HEADER, BUILD_INFO, ENGINE, ESMINI, EXE_SUFFIX, NO_WINDOW, RUNTIME, WINDOWS, sha256, write_json
 
 TAG = 'v3.8.1'
 ARCHIVE = RUNTIME / 'downloads' / f'esmini-fullsrc-{TAG}.zip'
@@ -24,32 +24,34 @@ ARCHIVE_URL = f'https://github.com/esmini/esmini/releases/download/{TAG}/esmini-
 ARCHIVE_SHA256 = 'dacb0d3c7e8919e27c456d5cbbc3458c07134fa6ce3f84800dc1f0473d77105e'
 BUILD = ENGINE / 'build'
 CONTROLLER_DIR = 'EnvironmentSimulator/Modules/Controllers'
-NOISE_TARGET = 'EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/StudioPerceptionNoise.hpp'
+BRIDGE_TARGET = 'EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/StudioPerceptionBridge.hpp'
+# Hook of earlier versions; removed from the engine tree when found.
+OLD_TARGETS = ('EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/StudioPerceptionNoise.hpp',)
 SCENARIO_READER = 'EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioReader.cpp'
 TARGETS = ('esmini', 'replayer')
 
-# (file, unique upstream text, replacement). The hook wraps every controller, whichever it is.
+# (file, unique upstream text, replacement). The bridge wraps every controller, whichever it is.
 PUBLIC_EDITS = [
     ('EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioEngine.cpp',
      '#include "OSCParameterDistribution.hpp"',
-     '#include "OSCParameterDistribution.hpp"\n#include "StudioPerceptionNoise.hpp"'),
+     '#include "OSCParameterDistribution.hpp"\n#include "StudioPerceptionBridge.hpp"'),
     ('EnvironmentSimulator/Modules/ScenarioEngine/SourceFiles/ScenarioEngine.cpp',
      '                scenarioReader->controller_[i]->Step(deltaSimTime);\n',
-     '                studio::PerceptionNoise::Inst().Begin(scenarioReader->controller_[i]->GetRoadObject(), entities_.object_, simulationTime_);\n'
+     '                studio::PerceptionBridge::Inst().Begin(scenarioReader->controller_[i]->GetRoadObject(), entities_.object_, simulationTime_);\n'
      '                scenarioReader->controller_[i]->Step(deltaSimTime);\n'
-     '                studio::PerceptionNoise::Inst().End();\n'),
+     '                studio::PerceptionBridge::Inst().End();\n'),
     # esmini 3.x only accepts options listed in its option enum.
     ('EnvironmentSimulator/Modules/CommonMini/EnumConfig.hpp',
      '        CONFIGS_COUNT                    // this must be the last enum value',
-     '        STUDIO_PERCEPTION_NOISE,         // Studio\n'
+     '        STUDIO_PERCEPTION_BRIDGE,        // Studio\n'
      '        CONFIGS_COUNT                    // this must be the last enum value'),
     ('EnvironmentSimulator/Modules/CommonMini/EnumConfig.hpp',
      '        {"disable_shadows", DISABLE_SHADOWS},\n',
-     '        {"disable_shadows", DISABLE_SHADOWS},\n        {"perception_noise", STUDIO_PERCEPTION_NOISE},\n'),
+     '        {"disable_shadows", DISABLE_SHADOWS},\n        {"perception_bridge", STUDIO_PERCEPTION_BRIDGE},\n'),
     ('EnvironmentSimulator/Modules/PlayerBase/playerbase.cpp',
      '    opt.AddOption("collision", "Enable global collision detection, potentially reducing performance");',
      '    opt.AddOption("collision", "Enable global collision detection, potentially reducing performance");\n'
-     '    opt.AddOption("perception_noise", "Studio perceived-range noise file for the observer controllers", "filename");'),
+     '    opt.AddOption("perception_bridge", "Ask Python on stdin and stdout how the controller of this object perceives the others", "observer");'),
     # The archive is not a git checkout.
     ('CMakeLists.txt', 'COMMAND git submodule update --init --recursive',
      'COMMAND ${CMAKE_COMMAND} -E echo "Submodule update skipped (source archive)"'),
@@ -129,7 +131,9 @@ def patch_engine(selected):
             path = ENGINE / relative
             if path.read_bytes() != text.encode('utf-8'):
                 path.write_bytes(text.encode('utf-8'))
-    shutil.copy2(NOISE_HEADER, ENGINE / NOISE_TARGET)
+    shutil.copy2(BRIDGE_HEADER, ENGINE / BRIDGE_TARGET)
+    for relative in OLD_TARGETS:
+        (ENGINE / relative).unlink(missing_ok=True)
 
 
 def install_controllers(selected):
@@ -227,7 +231,7 @@ def write_build_info(selected, installed, *, complete):
     write_json(BUILD_INFO, {'engine_tag': TAG, 'engine_archive_sha256': ARCHIVE_SHA256, 'complete': complete,
                             'platform': platform.platform(), 'installed_sources': installed,
                             'controllers': {c.key: c.source_metadata() for c in selected},
-                            'perception_noise_sha256': sha256(NOISE_HEADER)})
+                            'bridge_sha256': sha256(BRIDGE_HEADER)})
 
 
 def check_build(controller):
@@ -237,8 +241,8 @@ def check_build(controller):
     info = json.loads(BUILD_INFO.read_text(encoding='utf-8'))
     if not info.get('complete'):
         raise RuntimeError('The last esmini build did not finish. Run: python -m pipeline setup')
-    if info['perception_noise_sha256'] != sha256(NOISE_HEADER):
-        raise RuntimeError('PerceptionNoise.hpp changed. Run: python -m pipeline setup')
+    if info.get('bridge_sha256') != sha256(BRIDGE_HEADER):
+        raise RuntimeError('PerceptionBridge.hpp changed. Run: python -m pipeline setup')
     if info['controllers'].get(controller.key) != controller.source_metadata():
         raise RuntimeError(f'Controller {controller.key!r} is new or changed. Run: python -m pipeline setup')
     return info

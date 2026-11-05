@@ -3,9 +3,9 @@
 {"name": "...", "scenarios": [...], "base": {...},
  "groups": [{"name": "...", "set": {...}, "vary": {"key": [values]}, "seeds": 30 | {"first": 50, "count": 50} | [1, 2]}]}
 
-Every combination of the "vary" values runs on every scenario with every seed. Keys may be dotted
-("range_factors.miss_rate"). Runs that already finished with the same configuration are skipped,
-so a stopped grid continues where it was.
+Every combination of the "vary" values runs on every scenario with every seed. Keys may be dotted;
+inside "errors" a part names an entry by its "name" or "type" ("errors.detection.miss_rate").
+Runs that already finished with the same configuration are skipped, so a stopped grid continues where it was.
 """
 from concurrent.futures import ThreadPoolExecutor
 import copy
@@ -31,13 +31,26 @@ RESULT_FIELDS = ['status', 'collision', 'impact_speed_kph', 'relative_impact_spe
                  'observed_range_rmse_m']
 
 
+def entry(entries, name, key):
+    """The entry of a list such as "errors" whose name, or type, is `name`."""
+    for item in entries:
+        if isinstance(item, dict) and (item.get('name') or item.get('type')) == name:
+            return item
+    raise ValueError(f'{key}: no entry {name!r}; add {{"type": "{name}"}} to the list first, in "base" or "set".')
+
+
 def assign(config, key, value):
     """Set a possibly dotted key; dictionaries are merged."""
     *parents, last = key.split('.')
     for parent in parents:
-        if not isinstance(config.get(parent), dict):
+        if isinstance(config, list):
+            config = entry(config, parent, key)
+            continue
+        if not isinstance(config.get(parent), (dict, list)):
             config[parent] = {}
         config = config[parent]
+    if isinstance(config, list):
+        raise ValueError(f'{key}: name a setting inside an entry, such as errors.detection.miss_rate')
     if isinstance(value, dict) and isinstance(config.get(last), dict):
         config[last] |= value
     else:

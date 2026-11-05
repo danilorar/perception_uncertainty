@@ -45,8 +45,8 @@ python -m unittest discover tests
 ```
 
 `setup` downloads esmini 3.8.1 and about 1 GB of dependencies, then compiles it with the controllers. The first time takes a
-few minutes. Run it again whenever a controller or `pipeline/engine/PerceptionNoise.hpp` changes; a run refuses to start on a stale
-build.
+few minutes. Run it again whenever a controller or `pipeline/engine/PerceptionBridge.hpp` changes; a run refuses to start on a
+stale build. Error plugins are Python and need no compile.
 
 ## Run one simulation
 
@@ -57,12 +57,12 @@ python -m pipeline list
 ```
 
 Without `--output`, results go to a new folder in `output/runs/`. `replay` opens the run in the esmini viewer. `list` shows
-the available controllers, error models and scenarios.
+the available controllers, error plugins and scenarios.
 
 A configuration lists only what differs from the defaults in `pipeline/config.py`:
 
 ```json
-{"scenario": "gidas_1549178", "uncertainty": "distance_ou_range", "noise_reference_mae_pct": 5.0, "seed": 0}
+{"scenario": "gidas_1549178", "errors": [{"type": "ou", "mae_pct": 5.0}], "seed": 0}
 ```
 
 | Result file | Content |
@@ -74,7 +74,7 @@ A configuration lists only what differs from the defaults in `pipeline/config.py
 | `metrics.csv` | Distance, gap and TTC per step. These use the truth; the controller never sees them |
 | `speed.png`, `range.png` | Plots of this run |
 | `config.json`, `versions.json` | Full settings and versions; `config.json` can be run again |
-| `perception_noise.tsv`, `perception_applied.tsv` | Error samples given to esmini, and errors it applied |
+| `perception_applied.tsv` | Per step: true range, range given to the controller, and the values each error plugin logs |
 | `esmini.log`, `esmini.csv`, `replay.dat`, `scene.xosc` | Raw esmini input and output |
 
 ## Run a grid
@@ -93,32 +93,90 @@ keep plots or replay files.
 {
   "name": "my_grid",
   "scenarios": ["gidas_1549178"],
-  "base": {"uncertainty": "range_factors", "range_factors.miss_rate": 0.1},
+  "base": {"errors": [{"type": "detection", "miss_rate": 0.1}]},
   "groups": [
-    {"name": "markov", "vary": {"range_factors.miss_mean_s": [0.2, 0.5, 1.0]}, "seeds": 50},
-    {"name": "iid", "set": {"range_factors.miss_model": "iid"}, "seeds": {"first": 50, "count": 50}}
+    {"name": "markov", "vary": {"errors.detection.miss_mean_s": [0.2, 0.5, 1.0]}, "seeds": 50},
+    {"name": "iid", "set": {"errors.detection.miss_model": "iid"}, "seeds": {"first": 50, "count": 50}}
   ]
 }
 ```
 
 Every combination of the `vary` values runs on every scenario with every seed. Without `scenarios`, all scenarios run.
+A key like `errors.detection.miss_rate` changes one setting of the entry with that `name` or `type`; the entry must
+already be in the list, from `base` or `set`. A `set` of `"errors"` replaces the whole list.
 `seeds` is a count (from 0), a range, or a list like `[1, 2]`; without it, seed 0 runs.
 
 Ready-made grids are in `experiments/`. Start with `smoke`, which checks that the pipeline works.
 
-## Error models
+## Error plugins
 
-Set with `"uncertainty"`:
+Errors are set with `"errors"`, a list of plugins that run in that order on every controller step:
 
-| Value | Meaning | Settings |
+```json
+"errors": [{"type": "size", "scale": 1.1}, {"type": "ou", "mae_pct": 1.4}, {"type": "detection", "miss_rate": 0.1}]
+```
+
+`type` is the file name in `pipeline/errors/`. The other keys are settings; a setting left out keeps its default. Each
+plugin gets the result of the one before it, so the order matters. To use one type twice, give each entry a `name`.
+
+| Type | What the controller gets | Settings (default) |
 |---|---|---|
-| `recorded_truth` | No error | |
-| `distance_ou_range` | Correlated error that grows with distance | `noise_reference_mae_pct` (mean error at `noise_reference_range_m`), `noise_correlation_time_s`, `noise_zero_range_m` |
-| `range_factors` | Size, Identification, Detection, lost target, optional OU | `range_factors`: see the comments in `pipeline/errors/factors.py` |
+| `size` | range + (scale - 1) * true range + bias | `scale` (1.0), `bias_m` (0.0) |
+| `identification` | in wrong-class frames: range + (wrong_scale - 1) * true range + wrong_bias; `size` skips those frames | `wrong_rate` (0), `wrong_mean_s` (0.5), `wrong_scale` (1.0), `wrong_bias_m` (0), `sensor_period_s` (0.05) |
+| `ou` | range + a correlated error that grows with distance | `mae_pct` (5.0, mean error at `reference_range_m`), `correlation_time_s` (0.5), `zero_range_m` (3), `reference_range_m` (100) |
+| `detection` | in lost frames: no target, or a predicted range | `miss_rate` (0), `miss_model` (`markov` or `iid`), `miss_mean_s` (0.5), `sensor_period_s` (0.05), `lost_target` (`vanish` or `predict`), `lost_target_motion` (`live` or `frozen`), `lost_target_distance` (`frozen_difference` or `frozen_object`) |
+| `template` | range + white noise; a starting point for new plugins | `sigma_m` (0.0) |
 
-How it works: before each controller step, esmini moves the targets to where the controller should perceive them, and
-puts them back right after. Collisions, logs and replays therefore stay true, and any controller that reads target
-positions from esmini gets the error with no extra code.
+Put `identification` before `size`, and `detection` last, so its prediction starts from the range with all other
+errors. The docstring at the top of each file gives the details.
+
+How it works: before each controller step, esmini sends the true state of every object to Python. The plugins change
+what the controller should see, and esmini moves the targets there for that one step and puts them back right after.
+Collisions, logs and replays therefore stay true, and any controller that reads targets from esmini gets the error with
+no extra code. `perception_applied.tsv` records, per step, the true and given range and every value the plugins log.
+
+## Add an error plugin
+
+1. Copy `pipeline/errors/template.py` to `pipeline/errors/my_error.py`.
+2. Change `SETTINGS` and `perceive`.
+3. Use `"errors": [{"type": "my_error", ...}]`. No compile is needed, and `python -m pipeline list` shows the new type.
+
+```python
+import random
+
+SETTINGS = {'sigma_m': 0.0}        # every setting with its default
+RANGES = {'sigma_m': (0, 50)}      # optional: allowed range of number settings
+LOG = ('error_m',)                 # optional: columns in perception_applied.tsv
+
+class Error:
+    def __init__(self, settings, run):           # once per run
+        self.sigma = settings['sigma_m']
+        self.random = {t['name']: random.Random(f'{run.seed}:{run.label}:{t["id"]}') for t in run.targets}
+
+    def perceive(self, step, t, ego, targets):   # before every controller step
+        for target in targets:
+            error = self.random[target['name']].gauss(0.0, self.sigma)
+            target['range'] += error
+            target['log']['error_m'] = error
+```
+
+`run` has `seed`, `dt_s`, `steps`, `duration_s`, `scenario`, `ego`, `targets` and `label`. `ego` holds the true state of the
+ego. Each target is a dictionary:
+
+| Key | Meaning |
+|---|---|
+| `true`, `true_range` | True state and true centre-to-centre range. Read only |
+| `range` | Range the controller gets. The target moves along the line of sight from the ego |
+| `x`, `y` | Centre of the target box. If a plugin changes them, they win over `range` |
+| `heading`, `speed`, `vx`, `vy`, `vz`, `ax`, `ay`, `az`, `length`, `width` | Other values the controller gets |
+| `seen` | `False` hides the target for this step |
+| `class_correct`, `predicted` | Flags shared between plugins: `identification` sets the first, `detection` the second |
+| `log` | Values for `perception_applied.tsv`, under the names in `LOG` |
+
+Optional: `CHOICES` for text settings, `check(settings, run)` to reject bad combinations with `ValueError`, and
+`describe()` to save a description in `summary.json`. Use a random stream per plugin and target, seeded as above: the
+same seed then gives the same errors, and adding another plugin or target does not change them. A plugin cannot add
+objects that are not in the scenario.
 
 ## Add a controller
 
@@ -146,15 +204,6 @@ LOG_INFO("LOG_VALUE:Acceleration:{}", acceleration);
 In the scenarios the ego starts with speed 0 and follows a recorded trajectory. With `"mode": "override"` that trajectory is
 ignored and the controller moves the car itself, as `example_aeb` does.
 
-## Add an error model
-
-1. Copy `pipeline/errors/ou.py` to `pipeline/errors/my_model.py`. `pipeline/errors/__init__.py` lists the functions it needs.
-2. Add it to `MODELS` in that file, and add any new settings to `DEFAULT` in `pipeline/config.py`.
-3. Use `{"uncertainty": "my_model"}` in a configuration.
-
-No compile is needed if the model only produces the existing inputs: a unit error `z`, `missed` and `wrong` flags per step,
-and fixed scale and bias. Anything else also needs a change in `pipeline/engine/PerceptionNoise.hpp` and another `setup`.
-
 ## Add a scenario
 
 Put the `.xosc` and its `.xodr` (same name) in `pipeline/scenarios/data/` and add a line to
@@ -174,9 +223,9 @@ pipeline/
   results.py        result tables and metrics
   plots.py          plots of one run
   controllers/      one folder per controller
-  errors/           error models
+  errors/           error plugins
   scenarios/        scenario files
-  engine/           esmini build and error hook
+  engine/           esmini build and the perception bridge
 configs/            example configurations
 experiments/        grids
 tests/              python -m unittest discover tests

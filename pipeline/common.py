@@ -17,7 +17,7 @@ EXE_SUFFIX = '.exe' if WINDOWS else ''
 ESMINI = ENGINE / 'bin' / f'esmini{EXE_SUFFIX}'
 REPLAYER = ENGINE / 'bin' / f'replayer{EXE_SUFFIX}'
 BUILD_INFO = ENGINE / 'build.json'
-NOISE_HEADER = PACKAGE / 'engine' / 'PerceptionNoise.hpp'
+BRIDGE_HEADER = PACKAGE / 'engine' / 'PerceptionBridge.hpp'
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if WINDOWS else 0
 
 

@@ -1,0 +1,5 @@
+{"scenario": "gidas_1549178", "seed": 1,
+ "errors": [{"type": "identification", "wrong_rate": 0.05, "wrong_scale": 1.77},
+            {"type": "size", "scale": 1.05},
+            {"type": "template", "sigma_m": 0.3},
+            {"type": "detection", "miss_rate": 0.1, "lost_target": "predict"}]}

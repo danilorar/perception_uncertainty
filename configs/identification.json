@@ -1,1 +1,1 @@
-{"scenario": "gidas_1549178", "uncertainty": "range_factors", "range_factors": {"wrong_rate": 0.2, "wrong_scale": 1.77, "wrong_mean_s": 0.5}, "seed": 3}
+{"scenario": "gidas_1549178", "errors": [{"type": "identification", "wrong_rate": 0.2, "wrong_scale": 1.77, "wrong_mean_s": 0.5}], "seed": 3}

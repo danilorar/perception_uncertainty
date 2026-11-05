@@ -2,7 +2,7 @@
   "name": "smoke",
   "description": "Quick check that the pipeline works. 6 runs.",
   "groups": [
-    {"name": "no_error", "set": {"uncertainty": "recorded_truth"}},
-    {"name": "ou", "set": {"uncertainty": "distance_ou_range", "noise_reference_mae_pct": 5.0}}
+    {"name": "no_error", "set": {"errors": []}},
+    {"name": "ou", "set": {"errors": [{"type": "ou", "mae_pct": 5.0}]}}
   ]
 }

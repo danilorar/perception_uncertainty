@@ -32,7 +32,7 @@ def command_grid(args):
 def command_list(_):
     from . import controllers, errors, scenarios
     print('Controllers:   ', ', '.join(controllers.all_controllers()))
-    print('Error models:  ', ', '.join(errors.MODELS))
+    print('Error plugins: ', ', '.join(errors.all_plugins()))
     print('Scenarios:     ', ', '.join(scenarios.all_scenarios()))
 
 
@@ -69,7 +69,7 @@ def main():
     grid.add_argument('--output', help='results folder; default output/grids/<name>')
     grid.set_defaults(function=command_grid)
 
-    commands.add_parser('list', help='show controllers, error models and scenarios').set_defaults(function=command_list)
+    commands.add_parser('list', help='show controllers, error plugins and scenarios').set_defaults(function=command_list)
 
     replay = commands.add_parser('replay', help='watch a finished single run in the esmini replayer')
     replay.add_argument('run', help='results folder of the run')

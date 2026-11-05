@@ -1,11 +1,18 @@
-"""Temporally correlated range error (Ornstein-Uhlenbeck) that grows with distance.
+"""OU: a temporally correlated range error (Ornstein-Uhlenbeck) that grows with distance.
 
-The distance law and correlation time are assumptions for sensitivity studies, not calibrated sensor values.
+    mean absolute error = reference_range_m * mae_pct / 100 * max(0, r - zero_range_m) / (reference_range_m - zero_range_m)
+    range += mean absolute error * sqrt(pi / 2) * z,   z: unit OU process with correlation time correlation_time_s
+
+r is the true range. The distance law and correlation time are assumptions for sensitivity studies, not
+calibrated sensor values.
 """
 import math
 import random
 
-INJECTS = True
+SETTINGS = {'mae_pct': 5.0, 'correlation_time_s': 0.5, 'zero_range_m': 3.0, 'reference_range_m': 100.0}
+RANGES = {'mae_pct': (0, 100), 'correlation_time_s': (0.01, 20), 'zero_range_m': (0, 499), 'reference_range_m': (1, 500)}
+LOG = ('z', 'sigma_m', 'error_m')
+SIGMA_PER_MAE = math.sqrt(math.pi / 2.0)
 
 
 class CorrelatedRangeNoise:
@@ -38,38 +45,33 @@ class CorrelatedRangeNoise:
         return z
 
 
-def unit_samples(c, target_id, steps):
-    noise = CorrelatedRangeNoise(c['seed'], c['noise_correlation_time_s'])
-    return [noise.sample(target_id, round(k * c['dt_s'], 8)) for k in range(steps)]
+def unit_samples(seed, tau_s, object_id, dt_s, steps):
+    noise = CorrelatedRangeNoise(seed, tau_s)
+    return [noise.sample(object_id, round(k * dt_s, 8)) for k in range(steps)]
 
 
-def validate(c):
-    if c['range_factors'] is not None:
-        raise ValueError('range_factors can only be set with uncertainty "range_factors".')
-    if c['noise_reference_range_m'] <= c['noise_zero_range_m']:
-        raise ValueError('noise_reference_range_m must be greater than noise_zero_range_m.')
+def check(settings, run):
+    if settings['reference_range_m'] <= settings['zero_range_m']:
+        raise ValueError('reference_range_m must be greater than zero_range_m')
 
 
-def mean_error_pct(c):
-    return c['noise_reference_mae_pct']
+class Error:
+    def __init__(self, settings, run):
+        self.settings = settings
+        self.pct, self.zero, self.reference = settings['mae_pct'], settings['zero_range_m'], settings['reference_range_m']
+        self.z = {target['name']: unit_samples(run.seed, settings['correlation_time_s'], target['id'], run.dt_s, run.steps)
+                  for target in run.targets}
 
+    def perceive(self, step, t, ego, targets):
+        for target in targets:
+            r = target['true_range']
+            mae = self.reference * self.pct / 100.0 * max(0.0, r - self.zero) / (self.reference - self.zero)
+            sigma = mae * SIGMA_PER_MAE
+            z = self.z[target['name']][step]
+            error = sigma * z
+            target['range'] = target['range'] + error
+            target['log'].update(z=z, sigma_m=sigma, error_m=error)
 
-def settings(c):
-    return []
-
-
-def tracks(c, target_id, steps):
-    return {'z': unit_samples(c, target_id, steps)}
-
-
-def describe(c):
-    return {'model': 'distance_scaled_stationary_ou_v1',
-            'distance': 'true bounding-box centre-to-centre range r, in metres',
-            'mean_absolute_error_m': 'reference_range * reference_mae_pct / 100 * max(0, r - zero_range) / (reference_range - zero_range)',
-            'sigma_m': 'mean_absolute_error_m * sqrt(pi/2); the same slope continues beyond the reference range',
-            'transition': 'z_next = exp(-dt/tau) * z + sqrt(1 - exp(-2*dt/tau)) * N(0,1), starting from N(0,1), one stream per object',
-            'correlation_time_s': c['noise_correlation_time_s'],
-            'zero_error_range_m': c['noise_zero_range_m'], 'reference_range_m': c['noise_reference_range_m'],
-            'reference_mean_absolute_error_pct': c['noise_reference_mae_pct'],
-            'invalid_measurements': 'A negative range hides the target for that controller step.',
-            'calibration': 'Assumed values; a sensitivity model, not measured sensor risk.'}
+    def describe(self):
+        return {'transition': 'z_next = exp(-dt/tau) * z + sqrt(1 - exp(-2*dt/tau)) * N(0,1), from N(0,1), one stream per object',
+                'calibration': 'Assumed values; a sensitivity model, not measured sensor risk.', **self.settings}

@@ -14,8 +14,7 @@ TRUTH_FIELDS = ['time_s', 'object_id', 'object_name', 'x_m', 'y_m', 'z_m', 'head
 EGO_FIELDS = ['time_s', 'x_m', 'y_m', 'heading_rad', 'speed_mps', 'speed_kph', 'command_accel_mps2', 'brake_active',
               'collision_ids', 'controller_state']
 OBSERVATION_FIELDS = ['time_s', 'object_id', 'object_name', 'observation_valid', 'true_range_m', 'observed_range_m',
-                      'raw_observed_range_m', 'range_error_mean_m', 'range_error_sigma_m', 'range_error_normalized',
-                      'sampled_range_error_m', 'actual_range_error_m', 'bearing_deg', 'observed_center_x_m',
+                      'raw_observed_range_m', 'actual_range_error_m', 'bearing_deg', 'observed_center_x_m',
                       'observed_center_y_m']
 METRIC_FIELDS = ['time_s', 'collision', 'minimum_distance_m', 'minimum_gap_m', 'ttc_s']
 # esmini log line: "[12.340] [info] LOG_VALUE:name:value" (optional [file::func::line] metadata).
@@ -25,7 +24,7 @@ BRAKE_THRESHOLD_MPS2 = -0.01
 
 
 def read_perception_log(path):
-    """Errors esmini applied during controller steps: {(time, name): row}."""
+    """What the controller saw on each controller step (written by errors.Chain): {(time, name): row}."""
     with Path(path).open(encoding='utf-8') as stream:
         return {(round(float(row['time_s']), 8), row['object_name']): row
                 for row in csv.DictReader(stream, delimiter='\t')}
@@ -129,7 +128,7 @@ class Tables:
 
 
 def observation_row(t, state, ego, distance, record):
-    """One row of observations.csv; record is what the hook applied on this step (None without a hook)."""
+    """One row of observations.csv; record is what the controller saw on this step (None without error plugins)."""
     row = {'time_s': t, 'object_id': state['id'], 'object_name': state['name'], 'true_range_m': distance}
     if record is None:
         return row, None, False
@@ -142,8 +141,6 @@ def observation_row(t, state, ego, distance, record):
     tx, ty = center(state)
     bearing = math.atan2(ty - ey, tx - ex) - ego['h']
     row.update(observation_valid=valid, true_range_m=true_range, observed_range_m=observed, raw_observed_range_m=raw,
-               range_error_mean_m=float(record['mean_error_m']), range_error_sigma_m=float(record['sigma_m']),
-               range_error_normalized=float(record['z']), sampled_range_error_m=float(record['error_m']),
                actual_range_error_m=None if observed is None else observed - true_range,
                bearing_deg=math.degrees(math.atan2(math.sin(bearing), math.cos(bearing))),
                observed_center_x_m=float(record['observed_center_x_m']) if valid else None,
