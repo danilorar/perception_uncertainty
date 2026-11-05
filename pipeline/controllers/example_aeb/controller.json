@@ -1,0 +1,8 @@
+{
+  "esmini_name": "ExampleAEBController",
+  "sources": ["ControllerExampleAEB.cpp", "ControllerExampleAEB.hpp"],
+  "header": "ControllerExampleAEB.hpp",
+  "factory": "InstantiateControllerExampleAEB",
+  "properties": {"mode": "override", "speed_kph": "60", "ttc_s": "2.0", "deceleration_mps2": "8"},
+  "signals": {"active": "AEB_active", "acceleration": "Acceleration"}
+}

@@ -1,0 +1,3 @@
+# Preserve the supplied files byte for byte and suppress source diffs.
+ControllerHiDrive.cpp binary
+ControllerHiDrive.hpp binary

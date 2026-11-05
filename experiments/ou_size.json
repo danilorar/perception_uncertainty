@@ -1,0 +1,10 @@
+{
+  "name": "ou_size",
+  "description": "How large must the OU error be before safety changes? Sizes are sensitivity levels, not sensor values. 282 runs.",
+  "base": {"noise_correlation_time_s": 0.5},
+  "groups": [
+    {"name": "no_error", "set": {"uncertainty": "recorded_truth"}},
+    {"name": "check_1.4", "set": {"uncertainty": "distance_ou_range", "noise_reference_mae_pct": 1.4}, "seeds": [0, 15, 29]},
+    {"name": "ou", "set": {"uncertainty": "distance_ou_range"}, "vary": {"noise_reference_mae_pct": [5.0, 10.0, 20.0]}, "seeds": 30}
+  ]
+}

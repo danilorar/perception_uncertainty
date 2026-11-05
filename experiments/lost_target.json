@@ -1,0 +1,17 @@
+{
+  "name": "lost_target",
+  "description": "What the vehicle gets while the target is lost. 5 variants x 4 miss patterns x 3 scenarios x 50 seeds = 3000 runs.",
+  "base": {"uncertainty": "range_factors", "noise_correlation_time_s": 0.5, "range_factors.miss_rate": 0.1},
+  "groups": [
+    {"name": "predict_iid", "set": {"range_factors.lost_target": "predict", "range_factors.miss_model": "iid"}, "seeds": 50},
+    {"name": "predict_markov", "set": {"range_factors.lost_target": "predict"}, "vary": {"range_factors.miss_mean_s": [0.2, 0.5, 1.0]}, "seeds": 50},
+    {"name": "ou_predict_iid", "set": {"range_factors.lost_target": "predict", "range_factors.ou_mae_pct": 1.4, "range_factors.miss_model": "iid"}, "seeds": 50},
+    {"name": "ou_predict_markov", "set": {"range_factors.lost_target": "predict", "range_factors.ou_mae_pct": 1.4}, "vary": {"range_factors.miss_mean_s": [0.2, 0.5, 1.0]}, "seeds": 50},
+    {"name": "frozen_iid", "set": {"range_factors.lost_target": "predict", "range_factors.lost_target_motion": "frozen", "range_factors.miss_model": "iid"}, "seeds": 50},
+    {"name": "frozen_markov", "set": {"range_factors.lost_target": "predict", "range_factors.lost_target_motion": "frozen"}, "vary": {"range_factors.miss_mean_s": [0.2, 0.5, 1.0]}, "seeds": 50},
+    {"name": "ou_frozen_iid", "set": {"range_factors.lost_target": "predict", "range_factors.lost_target_motion": "frozen", "range_factors.ou_mae_pct": 1.4, "range_factors.miss_model": "iid"}, "seeds": 50},
+    {"name": "ou_frozen_markov", "set": {"range_factors.lost_target": "predict", "range_factors.lost_target_motion": "frozen", "range_factors.ou_mae_pct": 1.4}, "vary": {"range_factors.miss_mean_s": [0.2, 0.5, 1.0]}, "seeds": 50},
+    {"name": "ou_speed_iid", "set": {"range_factors.lost_target": "predict", "range_factors.lost_target_motion": "frozen", "range_factors.lost_target_distance": "frozen_object", "range_factors.ou_mae_pct": 1.4, "range_factors.miss_model": "iid"}, "seeds": 50},
+    {"name": "ou_speed_markov", "set": {"range_factors.lost_target": "predict", "range_factors.lost_target_motion": "frozen", "range_factors.lost_target_distance": "frozen_object", "range_factors.ou_mae_pct": 1.4}, "vary": {"range_factors.miss_mean_s": [0.2, 0.5, 1.0]}, "seeds": 50}
+  ]
+}
