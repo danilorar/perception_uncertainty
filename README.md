@@ -104,16 +104,7 @@ keep plots or replay files.
 Every combination of the `vary` values runs on every scenario with every seed. Without `scenarios`, all scenarios run.
 `seeds` is a count (from 0), a range, or a list like `[1, 2]`; without it, seed 0 runs.
 
-| Grid in `experiments/` | Question | Runs |
-|---|---|---|
-| `smoke` | Does the pipeline work? | 6 |
-| `ou_tau` | OU error: size against correlation time | 1803 |
-| `range_factors` | Size, Identification, Detection and OU, each alone | 1899 |
-| `detection_seeds_50_99` | More Detection seeds for `range_factors` | 600 |
-| `lost_target` | What the car receives while the target is lost | 3000 |
-| `ou_size` | How large must the OU error be before safety changes? | 282 |
-
-Tables from `range_factors`, `lost_target` and `ou_size` are in `results/`.
+Ready-made grids are in `experiments/`. Start with `smoke`, which checks that the pipeline works.
 
 ## Error models
 
@@ -188,7 +179,6 @@ pipeline/
   engine/           esmini build and error hook
 configs/            example configurations
 experiments/        grids
-results/            tables from earlier grids
 tests/              python -m unittest discover tests
 ```
 
