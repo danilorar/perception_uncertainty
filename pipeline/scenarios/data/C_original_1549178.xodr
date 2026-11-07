@@ -1,0 +1,67 @@
+<?xml version='1.0' encoding='ASCII'?>
+<OpenDRIVE>
+  <header name="template" revMajor="1" revMinor="3" date="2021-03-10 13:12:23.353255" north="0.0" south="0.0" east="0.0" west="0.0"/>
+  <road id="0" junction="-1" length="500">
+    <link/>
+    <planView>
+      <geometry s="0" x="-55.026" y="-8.44" hdg="0.145748" length="500">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <left>
+          <lane id="2" type="driving" level="false">
+            <link/>
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+            <roadMark sOffset="0.0" type="solid" weight="standard" color="standard" width="0.13">
+              <type name="solid" width="0.15">
+                <line length="0" space="0" tOffset="0" width="0.15" sOffset="0" rule="none"/>
+              </type>
+            </roadMark>
+          </lane>
+          <lane id="1" type="driving" level="false">
+            <link/>
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+            <roadMark sOffset="0.0" type="solid" weight="standard" color="standard" width="0.13">
+              <type name="solid" width="0.15">
+                <line length="0" space="0" tOffset="0" width="0.15" sOffset="0" rule="none"/>
+              </type>
+            </roadMark>
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <link/>
+            <width sOffset="0.0" a="0" b="0.0" c="0.0" d="0.0"/>
+            <roadMark sOffset="0.0" type="solid" weight="standard" color="standard" width="0.13">
+              <type name="solid" width="0.15">
+                <line length="0" space="0" tOffset="0" width="0.15" sOffset="0" rule="none"/>
+              </type>
+            </roadMark>
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <link/>
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+            <roadMark sOffset="0.0" type="solid" weight="standard" color="standard" width="0.13">
+              <type name="solid" width="0.15">
+                <line length="0" space="0" tOffset="0" width="0.15" sOffset="0" rule="none"/>
+              </type>
+            </roadMark>
+          </lane>
+          <lane id="-2" type="driving" level="false">
+            <link/>
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+            <roadMark sOffset="0.0" type="solid" weight="standard" color="standard" width="0.13">
+              <type name="solid" width="0.15">
+                <line length="0" space="0" tOffset="0" width="0.15" sOffset="0" rule="none"/>
+              </type>
+            </roadMark>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>

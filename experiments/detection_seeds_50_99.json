@@ -1,0 +1,9 @@
+{
+  "name": "detection_seeds_50_99",
+  "description": "Detection, seeds 50 to 99, to join seeds 0 to 49 of range_factors. 600 runs.",
+  "base": {"errors": [{"type": "detection", "miss_rate": 0.1}]},
+  "groups": [
+    {"name": "detection_iid", "set": {"errors.detection.miss_model": "iid"}, "seeds": {"first": 50, "count": 50}},
+    {"name": "detection_markov", "vary": {"errors.detection.miss_mean_s": [0.2, 0.5, 1.0]}, "seeds": {"first": 50, "count": 50}}
+  ]
+}

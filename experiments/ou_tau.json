@@ -1,0 +1,10 @@
+{
+  "name": "ou_tau",
+  "description": "OU range error: mean error at 100 m x correlation time. 1803 runs.",
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}, "seeds": [1]},
+    {"name": "ou", "set": {"errors": [{"type": "ou"}]},
+     "vary": {"errors.ou.mae_pct": [5.0, 10.0, 20.0, 50.0], "errors.ou.correlation_time_s": [0.05, 0.2, 0.5, 1.0, 2.0]},
+     "seeds": {"first": 1, "count": 30}}
+  ]
+}
