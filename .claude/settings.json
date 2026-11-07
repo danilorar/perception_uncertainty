@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/ControllerHiDrive.cpp)",
+      "Read(**/ControllerHiDrive.hpp)",
+      "Read(**/ControllerHiDrive*.o)",
+      "Read(**/ControllerHiDrive*.obj)",
+      "Read(**/runtime/build.log)",
+      "Edit(**/ControllerHiDrive.cpp)",
+      "Edit(**/ControllerHiDrive.hpp)"
+    ]
+  }
+}
