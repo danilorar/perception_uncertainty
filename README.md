@@ -16,8 +16,8 @@ You need Python 3.11 or newer, about 3 GB of disk, and a C++ compiler:
 - **macOS:** run `xcode-select --install` and `brew install cmake`.
 
 ```bash
-git clone -b pipeline https://github.com/danilorar/perception_uncertainty.git
-cd perception_uncertainty
+git clone https://github.com/danilorar/perr-esmini.git
+cd perr-esmini
 ```
 
 Create and activate a Python environment.
