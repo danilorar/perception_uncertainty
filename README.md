@@ -128,7 +128,7 @@ plugin gets the result of the one before it, so the order matters. To use one ty
 |---|---|---|
 | `size` | range + (scale - 1) * true range + bias | `scale` (1.0), `bias_m` (0.0) |
 | `identification` | in wrong-class frames: range + (wrong_scale - 1) * true range + wrong_bias; `size` skips those frames | `wrong_rate` (0), `wrong_mean_s` (0.5), `wrong_scale` (1.0), `wrong_bias_m` (0), `sensor_period_s` (0.05) |
-| `ou` | range + a correlated error that grows with distance | `mae_pct` (5.0, mean error at `reference_range_m`), `correlation_time_s` (0.5), `zero_range_m` (3), `reference_range_m` (100) |
+| `ou` | range + a correlated error that grows with distance, plus an optional constant bias with the same distance law | `mae_pct` (5.0, mean error at `reference_range_m`), `bias_pct` (0.0, > 0 reads too far), `correlation_time_s` (0.5), `zero_range_m` (3), `reference_range_m` (100) |
 | `detection` | in lost frames: no target, or a predicted range | `miss_rate` (0), `miss_model` (`markov` or `iid`), `miss_mean_s` (0.5), `sensor_period_s` (0.05), `lost_target` (`vanish` or `predict`), `lost_target_motion` (`live` or `frozen`), `lost_target_distance` (`frozen_difference` or `frozen_object`) |
 | `template` | range + white noise; a starting point for new plugins | `sigma_m` (0.0) |
 

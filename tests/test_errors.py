@@ -176,6 +176,16 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(float(rows[1]['ou.z']), z[7])
         self.assertEqual(float(rows[1]['raw_range_m']), 30.0 + sigma * z[7])
 
+    def test_ou_bias_follows_the_same_distance_law(self):
+        z = unit_samples(4, 0.5, TARGET['id'], DT, 20)
+        share = (30.0 - 3.0) / (100.0 - 3.0)
+        bias_only = ChainRun([{'type': 'ou', 'mae_pct': 0.0, 'bias_pct': 5.0}], seed=4)
+        both = ChainRun([{'type': 'ou', 'mae_pct': 5.0, 'bias_pct': -2.0}], seed=4)
+        for step in (0, 7, 19):
+            self.assertAlmostEqual(bias_only.step(step)[1]['range'], 30.0 + 5.0 * share, places=12)
+            self.assertAlmostEqual(both.step(step)[1]['range'], 30.0 - 2.0 * share + 5.0 * share * SIGMA_PER_MAE * z[step],
+                                   places=12)
+
     def test_identification_replaces_size_on_wrong_frames(self):
         entries = [{'type': 'identification', 'wrong_rate': 0.5, 'wrong_scale': 2.0, 'wrong_mean_s': 0.2},
                    {'type': 'size', 'bias_m': 1.0}]

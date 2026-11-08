@@ -1,0 +1,12 @@
+{
+  "name": "ou_bias",
+  "description": "Constant against random range error of the same mean size (tau 0.5 s): where does a too-far bias start to crash, alone and with random error? Sizes are sensitivity levels, not sensor values. 579 runs.",
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}, "seeds": [1]},
+    {"name": "bias_only", "set": {"errors": [{"type": "ou", "mae_pct": 0.0}]},
+     "vary": {"errors.ou.bias_pct": [-10.0, -5.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0]}, "seeds": [1]},
+    {"name": "bias_random", "set": {"errors": [{"type": "ou"}]},
+     "vary": {"errors.ou.mae_pct": [2.5, 5.0], "errors.ou.bias_pct": [0.0, 2.5, 5.0]},
+     "seeds": {"first": 1, "count": 30}}
+  ]
+}

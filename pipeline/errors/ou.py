@@ -1,16 +1,20 @@
 """OU: a temporally correlated range error (Ornstein-Uhlenbeck) that grows with distance.
 
     mean absolute error = reference_range_m * mae_pct / 100 * max(0, r - zero_range_m) / (reference_range_m - zero_range_m)
-    range += mean absolute error * sqrt(pi / 2) * z,   z: unit OU process with correlation time correlation_time_s
+    bias                = reference_range_m * bias_pct / 100 * max(0, r - zero_range_m) / (reference_range_m - zero_range_m)
+    range += bias + mean absolute error * sqrt(pi / 2) * z,   z: unit OU process with correlation time correlation_time_s
 
-r is the true range. The distance law and correlation time are assumptions for sensitivity studies, not
+r is the true range. bias_pct > 0 reads the target too far, < 0 too near; it follows the same distance law, so
+mae_pct = bias_pct gives a random and a constant error of the same mean size. With a bias, mae_pct is the size of the
+random part only. The distance law and correlation time are assumptions for sensitivity studies, not
 calibrated sensor values.
 """
 import math
 import random
 
-SETTINGS = {'mae_pct': 5.0, 'correlation_time_s': 0.5, 'zero_range_m': 3.0, 'reference_range_m': 100.0}
-RANGES = {'mae_pct': (0, 100), 'correlation_time_s': (0.01, 20), 'zero_range_m': (0, 499), 'reference_range_m': (1, 500)}
+SETTINGS = {'mae_pct': 5.0, 'bias_pct': 0.0, 'correlation_time_s': 0.5, 'zero_range_m': 3.0, 'reference_range_m': 100.0}
+RANGES = {'mae_pct': (0, 100), 'bias_pct': (-100, 100), 'correlation_time_s': (0.01, 20), 'zero_range_m': (0, 499),
+          'reference_range_m': (1, 500)}
 LOG = ('z', 'sigma_m', 'error_m')
 SIGMA_PER_MAE = math.sqrt(math.pi / 2.0)
 
@@ -59,6 +63,7 @@ class Error:
     def __init__(self, settings, run):
         self.settings = settings
         self.pct, self.zero, self.reference = settings['mae_pct'], settings['zero_range_m'], settings['reference_range_m']
+        self.bias = settings['bias_pct']
         self.z = {target['name']: unit_samples(run.seed, settings['correlation_time_s'], target['id'], run.dt_s, run.steps)
                   for target in run.targets}
 
@@ -69,6 +74,8 @@ class Error:
             sigma = mae * SIGMA_PER_MAE
             z = self.z[target['name']][step]
             error = sigma * z
+            if self.bias:  # skipped at 0, so runs without a bias stay identical to the ones before bias_pct existed
+                error = self.reference * self.bias / 100.0 * max(0.0, r - self.zero) / (self.reference - self.zero) + error
             target['range'] = target['range'] + error
             target['log'].update(z=z, sigma_m=sigma, error_m=error)
 
