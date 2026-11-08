@@ -21,6 +21,32 @@ BRIDGE_HEADER = PACKAGE / 'engine' / 'PerceptionBridge.hpp'
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if WINDOWS else 0
 
 
+def code_version(folder=REPO):
+    """The Git commit of this checkout and the files that differ from it, so a result shows which code made it.
+
+    Ignored files (output/, runtime/, .venv) do not count. Outside a Git checkout every value is None.
+    """
+    try:
+        status = subprocess.run(['git', '--no-optional-locks', 'status', '--porcelain=v2', '--branch',
+                                 '--untracked-files=all'], cwd=folder, capture_output=True, encoding='utf-8',
+                                errors='replace', timeout=30, creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        status = None
+    if status is None or status.returncode != 0:
+        return {'commit': None, 'branch': None, 'local_changes': None}
+    commit = branch = None
+    changes = []
+    for line in status.stdout.splitlines():
+        if line.startswith('# branch.oid '):
+            commit = line.split(' ', 2)[2]
+        elif line.startswith('# branch.head '):
+            branch = line.split(' ', 2)[2]
+        elif line[:2] in ('1 ', '2 ', 'u ', '? '):
+            fields = {'1': 9, '2': 10, 'u': 11, '?': 2}[line[0]]  # the path is the last field
+            changes.append(line.split(' ', fields - 1)[-1].split('\t')[0])
+    return {'commit': commit, 'branch': branch, 'local_changes': sorted(changes)}
+
+
 def write_json(path, value):
     path = Path(path)
     temporary = path.with_suffix(path.suffix + f'.{os.getpid()}.tmp')

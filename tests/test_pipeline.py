@@ -5,13 +5,18 @@ Controller sources are never opened by these tests.
 import csv
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
+import urllib.error
 import xml.etree.ElementTree as ET
 
 from pipeline import controllers, grid, results, scenarios
-from pipeline.common import ESMINI, read_json
+from pipeline.common import ESMINI, code_version, read_json, write_json
 from pipeline.config import validate
+from pipeline.engine import build
 from pipeline.errors.ou import unit_samples
 from pipeline.run import run
 
@@ -142,6 +147,75 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(values, {0.01: {'AEB_active': '1'}, 0.02: {'Speed': '2.5'}})
 
 
+class VersionTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('git'), 'git is not installed')
+    def test_local_changes_are_listed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+
+            def git(*args):
+                subprocess.run(['git', *args], cwd=folder, check=True, capture_output=True)
+
+            git('init', '-q')
+            (folder / 'a.txt').write_text('a', encoding='utf-8')
+            (folder / '.gitignore').write_text('output/\n', encoding='utf-8')
+            git('add', '.')
+            git('-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '-q', '-m', 'first')
+            clean = code_version(folder)
+            (folder / 'a.txt').write_text('b', encoding='utf-8')
+            (folder / 'new file.txt').write_text('c', encoding='utf-8')
+            (folder / 'output').mkdir()
+            (folder / 'output' / 'results.csv').write_text('d', encoding='utf-8')
+            changed = code_version(folder)
+        self.assertRegex(clean['commit'], '^[0-9a-f]{40}$')
+        self.assertEqual(clean['local_changes'], [])
+        self.assertEqual(changed['commit'], clean['commit'])
+        self.assertEqual(changed['local_changes'], ['a.txt', 'new file.txt'])  # ignored output/ does not count
+
+    def test_outside_git_nothing_is_known(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(code_version(folder), {'commit': None, 'branch': None, 'local_changes': None})
+
+    def test_grid_rows_and_message_show_the_code(self):
+        job = {'name': 'r', 'scenario': 's', 'group': 'g', 'levels': {}, 'seed': 0}
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder)
+            write_json(out / 'summary.json', {'status': 'completed'})
+            old = grid.result_row(job, out)
+            write_json(out / 'versions.json', {'code': {'commit': 'a' * 40, 'branch': 'main', 'local_changes': ['x.py']}})
+            row = grid.result_row(job, out)
+        self.assertEqual((old['commit'], old['local_changes']), (None, None))
+        self.assertEqual((row['commit'], row['local_changes']), ('a' * 40, 1))
+        clean = dict(row, local_changes=0)
+        self.assertEqual(grid.describe_code([clean, clean]), 'Code: commit aaaaaaaaaa, no local changes.')
+        self.assertIn('1 of 2 runs used files that differ', grid.describe_code([clean, row]))
+        self.assertIn('2 code versions', grid.describe_code([clean, dict(clean, commit='b' * 40)]))
+        self.assertIn('not recorded', grid.describe_code([old]))
+
+
+class SetupTests(unittest.TestCase):
+    def test_a_failed_dependency_download_stops_setup(self):
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(build, 'ENGINE', Path(folder)):
+            build.check_downloads()
+            (Path(folder) / 'googletest.7z.log').write_text('', encoding='utf-8')
+            build.check_downloads()  # not compiled, so it does not matter
+            for name in ('osi', 'implot'):
+                (Path(folder) / f'{name}.7z.log').write_text('', encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError, 'could not download implot, osi. This is a network'):
+                build.check_downloads()
+
+    def test_a_failed_archive_download_is_explained(self):
+        error = urllib.error.HTTPError(build.ARCHIVE_URL, 504, 'Gateway Time-out', {}, None)
+        with tempfile.TemporaryDirectory() as folder:
+            archive = Path(folder) / 'downloads' / 'esmini.zip'
+            with mock.patch.object(build, 'ARCHIVE', archive), \
+                    mock.patch.object(build.urllib.request, 'urlopen', side_effect=error), \
+                    mock.patch('builtins.print'), \
+                    self.assertRaisesRegex(RuntimeError, 'Could not download esmini .*network or server problem'):
+                build.download_archive()
+            self.assertEqual(list(archive.parent.iterdir()), [])
+
+
 @unittest.skipUnless(ESMINI.is_file(), 'esmini is not built; run: python -m pipeline setup')
 class FullRunTests(unittest.TestCase):
     def table(self, path, delimiter=','):
@@ -153,7 +227,9 @@ class FullRunTests(unittest.TestCase):
             out = Path(folder) / 'run'
             summary = run(validate({'scenario': 'gidas_1554431'}), out, plots=True)
             ego = self.table(out / 'ego.csv')
+            code = read_json(out / 'versions.json')['code']
             self.assertTrue((out / 'speed.png').is_file() and (out / 'range.png').is_file())
+        self.assertEqual(code, code_version())
         self.assertIn(summary['status'], ('completed', 'completed_with_warnings'))
         self.assertIsNotNone(summary['first_trigger_time_s'])
         self.assertLess(summary['minimum_acceleration_mps2'], -5)

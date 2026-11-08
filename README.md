@@ -46,7 +46,8 @@ python -m unittest discover tests
 
 `setup` downloads esmini 3.8.1 and about 1 GB of dependencies, then compiles it with the controllers. The first time takes a
 few minutes. Run it again whenever a controller or `pipeline/engine/PerceptionBridge.hpp` changes; a run refuses to start on a
-stale build. Error plugins are Python and need no compile.
+stale build. Error plugins are Python and need no compile. If a download fails, `setup` says which one; run it again
+later and it downloads only what is missing.
 
 ## Run one simulation
 
@@ -73,7 +74,7 @@ A configuration lists only what differs from the defaults in `pipeline/config.py
 | `truth.csv` | True state of every vehicle per step |
 | `metrics.csv` | Distance, gap and TTC per step. These use the truth; the controller never sees them |
 | `speed.png`, `range.png` | Plots of this run |
-| `config.json`, `versions.json` | Full settings and versions; `config.json` can be run again |
+| `config.json`, `versions.json` | Full settings and versions; `config.json` can be run again. `versions.json` also has the Git commit and any files that differ from it |
 | `perception_applied.tsv` | Per step: true range, range given to the controller, and the values each error plugin logs |
 | `esmini.log`, `esmini.csv`, `replay.dat`, `scene.xosc` | Raw esmini input and output |
 
@@ -88,6 +89,10 @@ python -m pipeline grid experiments/range_factors.json --workers 16
 Results go to `output/grids/<name>/`: `results.csv` has one row per run, `summary.csv` one row per scenario and level,
 `failed.txt` lists failed runs. A stopped grid continues where it stopped. A grid keeps compressed tables only; it does not
 keep plots or replay files.
+
+To compare results with someone else, run the same commit with no local changes. The last columns of `results.csv`
+give each run's commit and how many files differed from it, and the grid warns at the end when that is not one clean
+commit.
 
 ```json
 {
