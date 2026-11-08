@@ -26,7 +26,7 @@ so this file is the shared record of what was run and what it showed.
 | `detection_seeds_50_99` | Extra seeds 50–99 for the detection groups of `range_factors` | 600 | | | | |
 | `ou_size` | How large must the OU error be before safety changes? | 282 | 2026-11-08 | Windows 11, `247f6cc` | Safe scenarios: 0/60 at 5%, 5/60 at 10% (3.6–18.1%), 8/60 at 20% (6.9–24.2%). `gidas_1554431`: 17, 14, 12 of 30 crash, median impact 17.5, 19.6, 24.7 km/h (no error 10.5) | Safe scenarios start crashing between 5% and 10%; on `gidas_1554431` fewer but harder crashes as the error grows. Sizes are sensitivity levels, not sensor values. Same as the 2026-11-03 studio sweep, run by run |
 | `ou_tau` | OU error: mean error at 100 m x correlation time | 1803 | 2026-11-08 | Windows 11, `8954bdf` | Safe scenarios, crashes of 60 at tau 0.05 / 0.2 / 0.5 / 1 / 2 s: 5% 0/0/0/0/0; 10% 0/4/5/4/5; 20% 0/1/8/8/9; 50% 0/0/1/3/9 (4/60: 2.6–15.9%, 9/60: 8.1–26.1%). At tau 0.05 s no crash up to 50%, but the brake triggers more than 0.1 s early in 47–60 of 60 runs from 10% | Up to 5% no crash at any correlation time. From 10% crashes need an error that lasts (none at 0.05 s, 4–5/60 from 0.2 s); larger errors that change fast trigger early braking instead of crashes. Sensitivity levels, not sensor values |
-| `ou_bias` | Same mean error size: does a constant too-far reading hurt more than random error, and where does bias plus random error start to crash? | 579 | | | | |
+| `ou_bias` | Same mean error size: does a constant too-far reading hurt more than random error, and where does bias plus random error start to crash? | 579 | 2026-11-08 | Windows 11, `685e3a0` | Constant bias, one run per level: reading too near (−5, −10%) never crashes and also avoids the no-error crash on `gidas_1554431`; reading too far first crashes at +15% on `gidas_1554254` and +20% on `gidas_1549178` (about 2.4 m at braking start), while the gap shrinks from +5% (`gidas_1554254` 1.90 → 0.56 m at +10%). Random error alone (`ou_tau`, tau 0.5 s) already crashes 5/60 at 10%. Bias + random, safe scenarios: random 2.5% with bias up to +5% 0/60; random 5% 0/60, with +2.5% bias 2/60, with +5% bias 4/60 (2.6–15.9%). `gidas_1554431`: random 2.5% 20/30 crash, with +5% bias 30/30, median impact 13.2 → 22.1 km/h | Direction matters: too near is safe here, too far eats the margin in every run and crashes for sure from about 15–20%. A random error of the same mean size crashes earlier (10%) but only in some runs, as it is sometimes two to three times its mean. A +5% bias and 5% random error, harmless alone, crash together about as often as 10% random alone. Sensitivity levels, not sensor values |
 | `lost_target` | What the vehicle gets while the target is lost (vanish / predict / frozen) | 3000 | 2026-11-08 | Windows 11, `247f6cc` | Safe scenarios, against 30/400 when the target vanishes: object speed held (`ou_speed`) 17/400 (2.7–6.7%); speed difference held (`frozen`, `ou_frozen`) 14/400; true speed kept (`predict`, `ou_predict`) 4/400. `gidas_1554431`: 162/200 with OU, 198–200/200 without | Holding the object speed avoids 13 of the 30 vanish crashes and adds none. The 4/400 groups still get the true target speed, so they flatter the prediction. Same as the 2026-11-02/03 studio sweeps, run by run |
 
 ## Notes per grid
@@ -55,6 +55,16 @@ so this file is the shared record of what was run and what it showed.
 - "Early" means the first trigger is more than 0.1 s before the no-error run on the same scenario.
 - `gidas_1554431` (crashes without error at 10.5 km/h): at tau 0.5 s 18, 15, 12, 3 of 30 crash at 5, 10,
   20, 50%, median impact 18.7, 20.5, 24.7, 18.6 km/h; at tau 0.05 s 16, 7, 0, 0 of 30.
+
+### `ou_bias`
+- `bias_pct` uses the same distance law as `mae_pct`, so the same percentage gives the same mean error size. At
+  braking start (no-error run) 1% is about 0.12 m on `gidas_1549178`, 0.16 m on `gidas_1554254` and 0.23 m on
+  `gidas_1554431`.
+- Bias-only runs have no randomness: one run per level and scenario, so where crashes start is a coarse boundary.
+- Random 5% with bias 0 equals `ou_tau` 5% at tau 0.5 s run by run (90/90). With `bias_pct` 0 the plugin skips
+  the bias, and 120 `ou_tau` runs repeated exactly before the grid ran.
+- `size` scale 1.1 crashed `gidas_1554254` in `range_factors`, while bias +10% here does not: the size law
+  (scale − 1) × r gives a larger offset at that range (1.89 against 1.64 m when braking starts).
 
 ### `lost_target`
 - The vanish reference is the detection groups of `range_factors`: same seeds, same misses.
