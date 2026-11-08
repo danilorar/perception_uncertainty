@@ -83,14 +83,36 @@ def apply_edits(pristine, edits, relative):
     return text
 
 
+RETRY = 'This is a network or server problem, not your setup. Run "python -m pipeline setup" again later.'
+# esmini downloads this too, but it is not compiled (USE_GTEST=OFF), so a failed download does not matter.
+OPTIONAL_DOWNLOADS = {'googletest'}
+
+
+def download_logs():
+    """esmini's configure step writes <package>.7z.log next to its sources only when a download fails."""
+    return sorted(ENGINE.glob('*.7z.log'))
+
+
+def check_downloads():
+    """Stop before compiling when esmini could not download a dependency; a rerun downloads only what is missing."""
+    failed = [path.name[:-len('.7z.log')] for path in download_logs()]
+    failed = [name for name in failed if name not in OPTIONAL_DOWNLOADS]
+    if failed:
+        raise RuntimeError(f'esmini could not download {", ".join(failed)}. {RETRY}')
+
+
 def download_archive():
     if ARCHIVE.is_file() and sha256(ARCHIVE) == ARCHIVE_SHA256:
         return
     ARCHIVE.parent.mkdir(parents=True, exist_ok=True)
     print(f'Downloading {ARCHIVE_URL}', flush=True)
     temporary = ARCHIVE.with_suffix('.partial')
-    with urllib.request.urlopen(ARCHIVE_URL, timeout=120) as response, temporary.open('wb') as stream:
-        shutil.copyfileobj(response, stream)
+    try:
+        with urllib.request.urlopen(ARCHIVE_URL, timeout=120) as response, temporary.open('wb') as stream:
+            shutil.copyfileobj(response, stream)
+    except OSError as error:
+        temporary.unlink(missing_ok=True)
+        raise RuntimeError(f'Could not download esmini ({error}). {RETRY}') from error
     if sha256(temporary) != ARCHIVE_SHA256:
         temporary.unlink()
         raise RuntimeError('The downloaded esmini archive failed its checksum.')
@@ -216,9 +238,12 @@ def build(*, with_controllers=True, cmake=None, jobs=None):
     patch_engine(selected)
     installed = install_controllers(selected)
     write_build_info(selected, installed, complete=False)
+    for path in download_logs():  # left by an earlier failed download
+        path.unlink()
     print('Configuring esmini (the first run downloads about 1 GB of dependencies and models)...', flush=True)
     if run_logged(configure_command(cmake), log):
         raise RuntimeError(f'CMake configuration failed. Read the log: {log}')
+    check_downloads()
     print(f'Compiling esmini with {len(selected)} controller(s), {jobs} jobs (the first run takes a few minutes)...', flush=True)
     if run_logged(compile_command(cmake, jobs), log):
         raise RuntimeError(f'Compilation failed. Read the log: {log}')

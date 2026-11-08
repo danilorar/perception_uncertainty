@@ -29,6 +29,8 @@ RESULT_FIELDS = ['status', 'collision', 'impact_speed_kph', 'relative_impact_spe
                  'first_brake_time_s', 'true_center_range_at_brake_m', 'minimum_gap_m', 'minimum_ttc_s',
                  'minimum_acceleration_mps2', 'final_speed_kph', 'end_time_s', 'invalid_range_observations',
                  'observed_range_rmse_m']
+# Which code made each run: the commit, and how many files differed from it (0 = clean).
+CODE_FIELDS = ['commit', 'local_changes']
 
 
 def entry(entries, name, key):
@@ -135,8 +137,30 @@ def result_row(job, out):
     summary = read_json(out / 'summary.json') if (out / 'summary.json').is_file() else {'status': 'failed'}
     details = summary.get('collision_details') or {}
     row = dict(summary, impact_speed_kph=details.get('ego_speed_kph'), relative_impact_speed_kph=details.get('relative_speed_kph'))
+    versions = read_json(out / 'versions.json') if (out / 'versions.json').is_file() else {}
+    code = versions.get('code') or {}
+    changes = code.get('local_changes')
     return {'run': job['name'], 'scenario': job['scenario'], 'group': job['group'], **job['levels'], 'seed': job['seed'],
-            **{key: row.get(key) for key in RESULT_FIELDS}}
+            **{key: row.get(key) for key in RESULT_FIELDS},
+            'commit': code.get('commit'), 'local_changes': None if changes is None else len(changes)}
+
+
+def describe_code(rows):
+    """One line on which code made the finished runs, and a warning when that is not one clean commit."""
+    done = [row for row in rows if row['status'] in DONE]
+    commits = sorted({row['commit'] or 'unknown' for row in done})
+    if not done:
+        return 'Code: no finished runs.'
+    if commits == ['unknown']:
+        return 'Code: not recorded (made outside a Git checkout or by an older pipeline).'
+    if len(commits) > 1:
+        return (f'Warning: these runs come from {len(commits)} code versions ({", ".join(c[:10] for c in commits)}). '
+                'Run the grid again into a new output folder before comparing them.')
+    changed = sum(1 for row in done if row['local_changes'])
+    if changed:
+        return (f'Warning: {changed} of {len(done)} runs used files that differ from commit {commits[0][:10]}. '
+                'Commit the changes and run again, or say so when you share these results.')
+    return f'Code: commit {commits[0][:10]}, no local changes.'
 
 
 def middle(values):
@@ -166,12 +190,13 @@ def write_table(path, rows, fields):
 def write_results(jobs, folder, output):
     level_keys = list(dict.fromkeys(key for job in jobs for key in job['levels']))
     rows = [result_row(job, folder / job['name']) for job in jobs]
-    write_table(output / 'results.csv', rows, ['run', 'scenario', 'group', *level_keys, 'seed', *RESULT_FIELDS])
+    write_table(output / 'results.csv', rows, ['run', 'scenario', 'group', *level_keys, 'seed', *RESULT_FIELDS, *CODE_FIELDS])
     cells = {}
     for row in rows:
         cells.setdefault((row['scenario'], row['group'], *(row.get(key) for key in level_keys)), []).append(row)
     summaries = [summary_row(cell, level_keys) for cell in cells.values()]
     write_table(output / 'summary.csv', summaries, list(summaries[0]))
+    return rows
 
 
 def run_grid(path, *, workers=8, list_only=False, output=None):
@@ -198,6 +223,7 @@ def run_grid(path, *, workers=8, list_only=False, output=None):
             if index % step == 0 or index == len(jobs):
                 print(f'{index}/{len(jobs)} failed={len(failed)}', flush=True)
     (output / 'failed.txt').write_text('\n'.join(failed), encoding='utf-8')
-    write_results(jobs, folder, output)
+    rows = write_results(jobs, folder, output)
     print(f'Results: {output / "results.csv"} and summary.csv', flush=True)
+    print(describe_code(rows), flush=True)
     return 1 if failed else 0

@@ -11,7 +11,7 @@ import threading
 import traceback
 
 from . import controllers, errors, results, scenarios
-from .common import BRIDGE_HEADER, ENGINE, ESMINI, NO_WINDOW, PACKAGE, sha256, write_json
+from .common import BRIDGE_HEADER, ENGINE, ESMINI, NO_WINDOW, PACKAGE, code_version, sha256, write_json
 from .engine.build import check_build
 
 TIMEOUT_S = 300
@@ -19,6 +19,7 @@ TIMEOUT_S = 300
 
 def write_versions(out, controller, build_info):
     write_json(out / 'versions.json', {
+        'code': code_version(),
         'python': sys.version, 'platform': platform.platform(),
         'engine': f'esmini {build_info["engine_tag"]} (official source archive)',
         'engine_archive_sha256': build_info['engine_archive_sha256'],
