@@ -1,0 +1,9 @@
+{
+  "name": "size_geometry",
+  "description": "A wrong reported length of the target box: does the controller's braking follow the box length, and how much does safety change when the centre or the near end stays right? Scales are sensitivity levels, not sensor values. 27 runs.",
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}},
+    {"name": "length", "set": {"errors": [{"type": "box"}]},
+     "vary": {"errors.box.length_scale": [0.8, 0.9, 1.1, 1.2], "errors.box.keep": ["centre", "near_end"]}}
+  ]
+}
