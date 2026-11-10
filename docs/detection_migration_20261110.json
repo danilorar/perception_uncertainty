@@ -1,0 +1,235 @@
+{
+  "date": "2026-11-10",
+  "feature_branch": "feature/esmini-perception",
+  "executed_commit": "75bfeabc07edd1d43b10fa163556b6fe76b2dc82",
+  "merged_main_commit": "247f6cccf2631b6c0f06ed1691e823896e11be1c",
+  "merge_commit": "e47289d",
+  "archive_commit": "833d370c9805e71d4436fc9a383e15399bb85ebe",
+  "native_baseline_commit": "484675b927a704b8b23d4dcc3ec8d87c8770fc9b",
+  "worktrees": {
+    "development": "/Users/zhuoma/TME180-detection-v2",
+    "legacy": "/Users/zhuoma/TME180-project"
+  },
+  "tests": {
+    "command": ".venv/bin/python -m unittest discover tests -q",
+    "passed": 51
+  },
+  "original_cpp_generator": {
+    "baseline_commit": "484675b927a704b8b23d4dcc3ec8d87c8770fc9b",
+    "reference": "Actual compiled original C++ DetectionDropout / MarkovDropout",
+    "public_source_sha256": {
+      "src/perception.cpp": "02eabd2f2915fb403dc3e8c9e75618e32ddd5a9aca0665d2211cb6fc670905cf",
+      "include/accsim/perception.hpp": "c6def76443ded0af4f18c9f64240f7de63ecec9b1a60a51bbd0476911ab0a4d7",
+      "include/accsim/types.hpp": "b44343c535cda76092fe3728c5ac3d297438808ae8acf3e40aaa338b0f36741b"
+    },
+    "miss_probability": 0.1,
+    "period_s": 0.05,
+    "frames": 200,
+    "sequences_compared": 800,
+    "frames_compared": 160000,
+    "all_identical": true
+  },
+  "hidrive_closed_loop": {
+    "reference": "/Users/zhuoma/TME180-detection-v2/tests/data/hidrive_detection_20261103.csv",
+    "controller": "HiDrive",
+    "runs_compared": 1203,
+    "all_metrics_match": true,
+    "absolute_tolerance": 1e-09,
+    "maximum_absolute_difference": {
+      "first_trigger_time_s": 0.0,
+      "first_brake_time_s": 0.0,
+      "minimum_gap_m": 0.0,
+      "collision_relative_speed_mps": 0.0
+    },
+    "executed_commits": [
+      "75bfeabc07edd1d43b10fa163556b6fe76b2dc82"
+    ],
+    "local_change_counts": [
+      0
+    ],
+    "groups": [
+      {
+        "scenario": "gidas_1549178",
+        "group": "ideal",
+        "runs": 1,
+        "old_collisions": 0,
+        "new_collisions": 0
+      },
+      {
+        "scenario": "gidas_1549178",
+        "group": "iid",
+        "runs": 100,
+        "old_collisions": 0,
+        "new_collisions": 0
+      },
+      {
+        "scenario": "gidas_1549178",
+        "group": "markov_0.2s",
+        "runs": 100,
+        "old_collisions": 6,
+        "new_collisions": 6
+      },
+      {
+        "scenario": "gidas_1549178",
+        "group": "markov_0.5s",
+        "runs": 100,
+        "old_collisions": 6,
+        "new_collisions": 6
+      },
+      {
+        "scenario": "gidas_1549178",
+        "group": "markov_1s",
+        "runs": 100,
+        "old_collisions": 9,
+        "new_collisions": 9
+      },
+      {
+        "scenario": "gidas_1554254",
+        "group": "ideal",
+        "runs": 1,
+        "old_collisions": 0,
+        "new_collisions": 0
+      },
+      {
+        "scenario": "gidas_1554254",
+        "group": "iid",
+        "runs": 100,
+        "old_collisions": 0,
+        "new_collisions": 0
+      },
+      {
+        "scenario": "gidas_1554254",
+        "group": "markov_0.2s",
+        "runs": 100,
+        "old_collisions": 13,
+        "new_collisions": 13
+      },
+      {
+        "scenario": "gidas_1554254",
+        "group": "markov_0.5s",
+        "runs": 100,
+        "old_collisions": 12,
+        "new_collisions": 12
+      },
+      {
+        "scenario": "gidas_1554254",
+        "group": "markov_1s",
+        "runs": 100,
+        "old_collisions": 12,
+        "new_collisions": 12
+      },
+      {
+        "scenario": "gidas_1554431",
+        "group": "ideal",
+        "runs": 1,
+        "old_collisions": 1,
+        "new_collisions": 1
+      },
+      {
+        "scenario": "gidas_1554431",
+        "group": "iid",
+        "runs": 100,
+        "old_collisions": 100,
+        "new_collisions": 100
+      },
+      {
+        "scenario": "gidas_1554431",
+        "group": "markov_0.2s",
+        "runs": 100,
+        "old_collisions": 100,
+        "new_collisions": 100
+      },
+      {
+        "scenario": "gidas_1554431",
+        "group": "markov_0.5s",
+        "runs": 100,
+        "old_collisions": 100,
+        "new_collisions": 100
+      },
+      {
+        "scenario": "gidas_1554431",
+        "group": "markov_1s",
+        "runs": 100,
+        "old_collisions": 100,
+        "new_collisions": 100
+      }
+    ],
+    "differences": []
+  },
+  "original_report_sha256_verified": true,
+  "legacy_rerun_seed18_matches_pipeline": true,
+  "seed18": {
+    "collision": true,
+    "first_trigger_time_s": 3.7,
+    "first_brake_time_s": 3.9,
+    "minimum_gap_m": -0.0197663729158295,
+    "collision_details": {
+      "time_s": 5.19,
+      "ego_speed_mps": 4.462025,
+      "ego_speed_kph": 16.06329,
+      "object_ids": [
+        1
+      ],
+      "relative_speed_kph": 10.043606510354143
+    }
+  },
+  "cone_video": {
+    "path": "output/videos/detection_seed18_cone.mp4",
+    "decode_ok": true,
+    "source_data_unchanged": true,
+    "frames": 261,
+    "fps": 50,
+    "size": [
+      1280,
+      720
+    ],
+    "sampled_cone_visibility": [
+      {
+        "time_s": 1.28,
+        "cone_visible": true,
+        "teal_pixels": 17716
+      },
+      {
+        "time_s": 1.32,
+        "cone_visible": false,
+        "teal_pixels": 0
+      },
+      {
+        "time_s": 1.76,
+        "cone_visible": true,
+        "teal_pixels": 17866
+      },
+      {
+        "time_s": 3.18,
+        "cone_visible": true,
+        "teal_pixels": 17644
+      },
+      {
+        "time_s": 3.2,
+        "cone_visible": false,
+        "teal_pixels": 0
+      },
+      {
+        "time_s": 3.68,
+        "cone_visible": false,
+        "teal_pixels": 0
+      },
+      {
+        "time_s": 3.7,
+        "cone_visible": true,
+        "teal_pixels": 19540
+      },
+      {
+        "time_s": 5.18,
+        "cone_visible": true,
+        "teal_pixels": 19455
+      }
+    ],
+    "video_sha256": "976228062f100c063d8d93c264ace106cb04e66e70988ff7da3bb0af4d32fdf6",
+    "all_timeline_flags_match_saved_log": true,
+    "encoded_frames": 311,
+    "encoded_duration_s": 6.22
+  },
+  "raw_outputs": "output/ is local and ignored; compact reference fixtures and this report are committed.",
+  "scope": "Native C++ IID/Markov stream equivalence and prior HiDrive closed-loop study migration. Fixed-parameter sensitivity assumptions, not measured sensor risk."
+}

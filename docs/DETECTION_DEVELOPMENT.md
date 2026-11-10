@@ -4,6 +4,10 @@ Continue on `feature/esmini-perception`, using `pipeline/` for new experiments.
 The original `experiments/esmini-perception/` remains a historical implementation.
 The scenario IDs retain `gidas_`, but these are TASC data.
 
+Migration verified on 2026-11-10: 51 tests passed, 160,000 original C++ detection flags matched,
+and all 1203 previous HiDrive main runs matched. See [the migration report](DETECTION_MIGRATION_20261110.md).
+The development worktree already has a built runtime and `.venv`; setup below is for a fresh environment.
+
 ## Preserved baselines
 
 - `baseline/native-markov-20261006`: original public C++ generator and native AEB/ACC source, `484675b`.
@@ -20,12 +24,16 @@ Both share one Git repository. No remote branch is changed by these local operat
 
 ```bash
 cd /Users/zhuoma/TME180-detection-v2
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -r pipeline/requirements.txt
-.venv/bin/python -m pipeline setup
+.venv/bin/python -m pip install cmake==3.31.6
+.venv/bin/python -m pipeline setup --cmake "$PWD/.venv/bin/cmake"
 .venv/bin/python -m unittest discover tests
 .venv/bin/python -m pipeline run configs/detection_markov_seed18.json --output output/demo_seed18
 ```
+
+`output/demo_seed18` and `output/grids/detection_baseline_100` already contain the verified migration runs.
+Use a fresh output name for another single run. For a new grid, copy the experiment JSON and change its `name`.
 
 The default controller is the supplied HiDrive controller on esmini 3.8.1. Private source files are opaque compiler inputs.
 For a configuration with several plugins, their order is the order in `errors`. That alone does not define a conditional
