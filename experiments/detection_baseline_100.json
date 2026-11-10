@@ -1,0 +1,11 @@
+{
+  "name": "detection_baseline_100",
+  "description": "Original detection-only design on HiDrive: 3 ideal runs and 1200 stochastic runs. Keep other error modules off.",
+  "base": {"controller": "hidrive", "dt_s": 0.01},
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}, "seeds": [0]},
+    {"name": "iid", "set": {"errors": [{"type": "detection", "miss_rate": 0.1, "miss_model": "iid", "sensor_period_s": 0.05}]}, "seeds": 100},
+    {"name": "markov", "set": {"errors": [{"type": "detection", "miss_rate": 0.1, "sensor_period_s": 0.05}]},
+     "vary": {"errors.detection.miss_mean_s": [0.2, 0.5, 1.0]}, "seeds": 100}
+  ]
+}

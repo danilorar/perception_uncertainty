@@ -144,6 +144,9 @@ no extra code. `perception_applied.tsv` records, per step, the true and given ra
 
 To add an error plugin, a controller or a scenario, see [docs/EXTENDING.md](docs/EXTENDING.md).
 
+Detection development, preserved Markov/HiDrive baselines, and dropout-cone video export are documented in
+[docs/DETECTION_DEVELOPMENT.md](docs/DETECTION_DEVELOPMENT.md). Use `python -m pipeline cone --help` for the video command.
+
 ## Files
 
 ```

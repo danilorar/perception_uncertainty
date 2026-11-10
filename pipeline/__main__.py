@@ -36,6 +36,14 @@ def command_list(_):
     print('Scenarios:     ', ', '.join(scenarios.all_scenarios()))
 
 
+def command_cone(args):
+    try:
+        from .visualization.cone import render
+    except ModuleNotFoundError as error:
+        raise RuntimeError('Install video dependencies: pip install -r pipeline/visualization/requirements.txt') from error
+    render(args)
+
+
 def command_replay(args):
     folder = Path(args.run).resolve()
     recording = folder / 'replay.dat'
@@ -70,6 +78,21 @@ def main():
     grid.set_defaults(function=command_grid)
 
     commands.add_parser('list', help='show controllers, error plugins and scenarios').set_defaults(function=command_list)
+
+    cone = commands.add_parser('cone', help='render saved motion with the logged detection dropout cone')
+    cone.add_argument('run', type=Path, help='single pipeline run folder, with truth.csv')
+    cone.add_argument('--output', type=Path, required=True)
+    cone.add_argument('--visual-runtime', type=Path, help='graphics-enabled esmini 3.8.1 folder; or TME180_VISUAL_RUNTIME')
+    cone.add_argument('--target', help='target object; required for multi-target scenes')
+    cone.add_argument('--detection-plugin', help='name of the detection plugin when several are configured')
+    cone.add_argument('--fps', type=int, default=50)
+    cone.add_argument('--width', type=int, default=1280)
+    cone.add_argument('--view-width-m', type=float, default=38)
+    cone.add_argument('--road-angle-deg', type=float, default=14)
+    cone.add_argument('--cone-range-m', type=float, default=24)
+    cone.add_argument('--cone-fov-deg', type=float, default=40)
+    cone.add_argument('--preview', action='store_true')
+    cone.set_defaults(function=command_cone)
 
     replay = commands.add_parser('replay', help='watch a finished single run in the esmini replayer')
     replay.add_argument('run', help='results folder of the run')

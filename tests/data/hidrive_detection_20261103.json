@@ -1,0 +1,9 @@
+{
+  "controller": "HiDrive",
+  "run_date": "2026-11-03",
+  "source_report_sha256": "45d78b822bd9659fd3e8b9ae01a1188b706cdc62c0b74140c5dc22c2a4ce45da",
+  "runs": 1203,
+  "legacy_archive_commit": "833d370c9805e71d4436fc9a383e15399bb85ebe",
+  "generator_source_commit": "484675b927a704b8b23d4dcc3ec8d87c8770fc9b",
+  "scope": "HiDrive study; do not compare its collision outcomes with the earlier native-AEB experiment."
+}
