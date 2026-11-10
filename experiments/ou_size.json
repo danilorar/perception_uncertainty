@@ -1,0 +1,9 @@
+{
+  "name": "ou_size",
+  "description": "How large must the OU error be before safety changes? Sizes are sensitivity levels, not sensor values. 282 runs.",
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}},
+    {"name": "check_1.4", "set": {"errors": [{"type": "ou", "mae_pct": 1.4}]}, "seeds": [0, 15, 29]},
+    {"name": "ou", "set": {"errors": [{"type": "ou"}]}, "vary": {"errors.ou.mae_pct": [5.0, 10.0, 20.0]}, "seeds": 30}
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "esmini_name": "HiDriveController",
+  "sources": ["ControllerHiDrive.cpp", "ControllerHiDrive.hpp"],
+  "header": "ControllerHiDrive.hpp",
+  "factory": "InstantiateControllerHiDrive",
+  "type_enum": "CONTROLLER_TYPE_HIDRIVE",
+  "properties": null,
+  "signals": {"active": "AEB_active", "acceleration": "Acceleration"}
+}

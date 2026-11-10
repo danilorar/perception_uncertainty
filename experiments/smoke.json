@@ -1,0 +1,8 @@
+{
+  "name": "smoke",
+  "description": "Quick check that the pipeline works. 6 runs.",
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}},
+    {"name": "ou", "set": {"errors": [{"type": "ou", "mae_pct": 5.0}]}}
+  ]
+}

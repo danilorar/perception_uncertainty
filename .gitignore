@@ -14,3 +14,7 @@ esmini-demo/*
 !esmini-demo/scripts/
 !esmini-demo/scripts/**
 
+
+# Pipeline: compiled esmini and results stay local
+runtime/
+output/

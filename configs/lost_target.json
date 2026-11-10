@@ -1,0 +1,4 @@
+{"scenario": "gidas_1549178", "seed": 5,
+ "errors": [{"type": "ou", "mae_pct": 1.4},
+            {"type": "detection", "miss_rate": 0.1, "miss_mean_s": 0.5, "lost_target": "predict",
+             "lost_target_motion": "frozen", "lost_target_distance": "frozen_object"}]}
