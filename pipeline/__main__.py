@@ -50,8 +50,7 @@ def command_import_tasc(args):
         if row['status'] != 'imported':
             print(f'skipped {row["group"]} {row["case"]}: {row["reason"]}')
     done = [row for row in rows if row['status'] == 'imported']
-    print(f'{len(done)} of {len(rows)} imported into {scenarios.LOCAL} '
-          f'({sum(row["swapped"] for row in done)} with swapped roles); report: import_report.csv there.')
+    print(f'{len(done)} of {len(rows)} imported into {scenarios.LOCAL}; report: import_report.csv there.')
 
 
 def command_replay(args):

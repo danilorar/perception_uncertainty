@@ -8,10 +8,11 @@ The case files lack what a pipeline scenario needs, so each file gets:
 - an ObjectController on the ego with the HiDrive properties of the three shared files, and an
   ActivateControllerAction in its Init, where the shared files have it;
 - a 10 s stop trigger when the storyboard has none (the cut-in files).
-The ego is object_1, the striking vehicle. In car-car and cyclist files it is the rear vehicle at first contact; when
-that is object_2, the two objects swap trajectories (as the teacher did in the cut-in "_s" files). Cut-in files keep
-object_1, the vehicle whose lane is entered. Files whose boxes overlap from the start are skipped, and so are car-car
-copies of cut-in cases (their roles are set in the cut-in file).
+The ego is object_1. Skipped: car-car and cyclist files where object_2 is the rear vehicle at first contact (the road
+follows object_1's path, and HiDrive jumps along that road when it brakes the other vehicle: tried 2026-11-11, 5 of 6
+cyclist cases jumped about 10 m at brake onset); files whose boxes overlap from the start; car-car copies of cut-in
+cases, whose roles and road the teacher set in the cut-in "_s" file. Cut-in files keep object_1, the vehicle whose
+lane is entered.
 """
 import csv
 import hashlib
@@ -83,14 +84,6 @@ def first_contact(root):
     return None
 
 
-def swap_roles(root):
-    """object_1 and object_2 trade everything they do in the storyboard; the entity definitions stay."""
-    other = {'object_1': 'object_2', 'object_2': 'object_1'}
-    for element in root.find('Storyboard').iter():
-        if element.get('entityRef') in other:
-            element.set('entityRef', other[element.get('entityRef')])
-
-
 def add_controller(root, ego='object_1'):
     item = root.find(f'./Entities/ScenarioObject[@name="{ego}"]')
     if item.find('ObjectController') is None:
@@ -128,7 +121,7 @@ def convert(xosc, group, target, *, skip_ids=()):
     case = case_id(xosc)
     key = f'tasc_{group}_{case}'
     row = {'key': key, 'group': group, 'case': case, 'source': xosc.name, 'status': 'skipped', 'reason': '',
-           'swapped': False, 'stop_trigger_added': False}
+           'stop_trigger_added': False}
     if case in skip_ids:
         row['reason'] = 'also in Cut-in, where its roles are set'
         return row
@@ -151,8 +144,8 @@ def convert(xosc, group, target, *, skip_ids=()):
         row['reason'] = 'the boxes overlap from the start'
         return row
     if group != 'cutin' and not two_ahead:
-        swap_roles(root)
-        row['swapped'] = True
+        row['reason'] = 'object_2 strikes from behind; the road follows object_1'
+        return row
     add_controller(root)
     row['stop_trigger_added'] = add_stop_trigger(root)
     root.find('./RoadNetwork/LogicFile').set('filepath', f'{key}.xodr')
@@ -183,10 +176,13 @@ def import_folder(folder, target):
         registry.pop(row['key'], None)
         if row['status'] == 'imported':
             registry[row['key']] = {'title': f'{TITLES[row["group"]]} {row["case"]}', 'file': f'{row["key"]}.xosc',
-                                    'group': row['group'], 'case': row['case'], 'swapped': row['swapped'],
-                                    'source': row['source'], 'source_sha1': row['source_sha1']}
+                                    'group': row['group'], 'case': row['case'], 'source': row['source'],
+                                    'source_sha1': row['source_sha1']}
+        else:
+            for suffix in ('.xosc', '.xodr'):
+                (target / f'{row["key"]}{suffix}').unlink(missing_ok=True)
     write_json(registry_path, dict(sorted(registry.items())))
-    fields = ['key', 'group', 'case', 'source', 'status', 'reason', 'swapped', 'stop_trigger_added', 'road', 'source_sha1']
+    fields = ['key', 'group', 'case', 'source', 'status', 'reason', 'stop_trigger_added', 'road', 'source_sha1']
     with (target / 'import_report.csv').open('w', encoding='utf-8', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()

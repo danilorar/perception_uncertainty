@@ -99,7 +99,6 @@ class TascImportTests(unittest.TestCase):
 
     def case(self, folder, group, *, swap=False, overlap=False, no_stop=False):
         """Write the shared file 1554431 in the teacher's format into <folder>/<group>/."""
-        from pipeline.scenarios import tasc
         tree = ET.parse(self.SHARED)
         root = tree.getroot()
         ego = root.find('./Entities/ScenarioObject[@name="object_1"]')
@@ -107,8 +106,11 @@ class TascImportTests(unittest.TestCase):
         for holder in root.iter('PrivateAction'):
             for action in holder.findall('ControllerAction'):
                 holder.remove(action)
-        if swap:
-            tasc.swap_roles(root)
+        if swap:  # object_1 and object_2 trade what they do
+            other = {'object_1': 'object_2', 'object_2': 'object_1'}
+            for element in root.find('Storyboard').iter():
+                if element.get('entityRef') in other:
+                    element.set('entityRef', other[element.get('entityRef')])
         if overlap:
             groups = list(root.iter('ManeuverGroup'))
             polylines = [group.find('.//Polyline') for group in groups]
@@ -133,18 +135,18 @@ class TascImportTests(unittest.TestCase):
 
     def test_conversion_restores_the_shared_file(self):
         local, rows = self.imported()
-        self.assertEqual([(row['key'], row['status'], row['swapped']) for row in rows], [('tasc_car_1554431', 'imported', False)])
+        self.assertEqual([(row['key'], row['status']) for row in rows], [('tasc_car_1554431', 'imported')])
         self.assertEqual(canonical(local / 'tasc_car_1554431.xosc'), canonical(self.SHARED))
         self.assertEqual((local / 'tasc_car_1554431.xodr').read_bytes(), self.SHARED.with_suffix('.xodr').read_bytes())
 
-    def test_rear_vehicle_becomes_the_ego(self):
+    def test_object_2_striking_from_behind_is_skipped(self):
         local, rows = self.imported(swap=True)
-        self.assertTrue(rows[0]['swapped'])
-        self.assertEqual(canonical(local / 'tasc_car_1554431.xosc'), canonical(self.SHARED))
+        self.assertEqual((rows[0]['status'], rows[0]['reason']), ('skipped', 'object_2 strikes from behind; the road follows object_1'))
+        self.assertFalse((local / 'tasc_car_1554431.xosc').exists())
 
     def test_cut_in_keeps_object_1_and_gets_a_stop_trigger(self):
         local, rows = self.imported(group='Cut-in', swap=True, no_stop=True)
-        self.assertEqual((rows[0]['key'], rows[0]['swapped'], rows[0]['stop_trigger_added']), ('tasc_cutin_1554431', False, True))
+        self.assertEqual((rows[0]['key'], rows[0]['status'], rows[0]['stop_trigger_added']), ('tasc_cutin_1554431', 'imported', True))
         stop = ET.parse(local / 'tasc_cutin_1554431.xosc').getroot().find('./Storyboard/StopTrigger//SimulationTimeCondition')
         self.assertEqual((stop.get('rule'), stop.get('value')), ('greaterThan', '10.0'))
 

@@ -1,0 +1,13 @@
+{
+  "name": "tasc_tolerance",
+  "description": "Do the limits found on the three shared scenarios hold across the TASC car-car and cyclist cases? Same assumed levels as ou_size and ou_bias (tau 0.5 s) and the 10% miss rate of range_factors, 10 seeds per case. Sensitivity levels, not sensor values. 5625 runs.",
+  "scenarios": ["tasc_car_*", "tasc_cyclist_*"],
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}, "seeds": [1]},
+    {"name": "ou", "set": {"errors": [{"type": "ou"}]}, "vary": {"errors.ou.mae_pct": [5.0, 10.0, 20.0]},
+     "seeds": {"first": 1, "count": 10}},
+    {"name": "bias_only", "set": {"errors": [{"type": "ou", "mae_pct": 0.0}]},
+     "vary": {"errors.ou.bias_pct": [5.0, 10.0, 15.0, 20.0]}, "seeds": [1]},
+    {"name": "detection", "set": {"errors": [{"type": "detection", "miss_rate": 0.1}]}, "seeds": {"first": 1, "count": 10}}
+  ]
+}
