@@ -1,0 +1,128 @@
+{
+  "name": "detection_spatial_v1_100",
+  "description": "Paired sensitivity: IID vs fixed Markov vs spatial Markov with spatial recovery.",
+  "scenarios": [
+    "gidas_1549178",
+    "gidas_1554254",
+    "gidas_1554431"
+  ],
+  "base": {
+    "dt_s": 0.01
+  },
+  "groups": [
+    {
+      "name": "hidrive_iid",
+      "set": {
+        "controller": "hidrive",
+        "errors": [
+          {
+            "type": "detection",
+            "miss_rate": 0.1,
+            "miss_model": "iid",
+            "miss_mean_s": 0.5,
+            "sensor_period_s": 0.05,
+            "lost_target": "vanish",
+            "lost_target_motion": "live"
+          }
+        ]
+      },
+      "seeds": 100
+    },
+    {
+      "name": "hidrive_markov",
+      "set": {
+        "controller": "hidrive",
+        "errors": [
+          {
+            "type": "detection",
+            "miss_rate": 0.1,
+            "miss_model": "markov",
+            "miss_mean_s": 0.5,
+            "sensor_period_s": 0.05,
+            "lost_target": "vanish",
+            "lost_target_motion": "live"
+          }
+        ]
+      },
+      "seeds": 100
+    },
+    {
+      "name": "hidrive_spatial",
+      "set": {
+        "controller": "hidrive",
+        "errors": [
+          {
+            "type": "detection_spatial_v1",
+            "base_miss_rate": 0.1,
+            "range_start_m": 20.0,
+            "angle_start_deg": 5.0,
+            "range_slope_per_m": 0.0025,
+            "angle_slope_per_deg": 0.005,
+            "recovery_range_decay_per_m": 0.06931471805599453,
+            "recovery_angle_decay_per_deg": 0.06931471805599453,
+            "miss_mean_s": 0.5,
+            "sensor_period_s": 0.05
+          }
+        ]
+      },
+      "seeds": 100
+    },
+    {
+      "name": "example_aeb_iid",
+      "set": {
+        "controller": "example_aeb",
+        "errors": [
+          {
+            "type": "detection",
+            "miss_rate": 0.1,
+            "miss_model": "iid",
+            "miss_mean_s": 0.5,
+            "sensor_period_s": 0.05,
+            "lost_target": "vanish",
+            "lost_target_motion": "live"
+          }
+        ]
+      },
+      "seeds": 100
+    },
+    {
+      "name": "example_aeb_markov",
+      "set": {
+        "controller": "example_aeb",
+        "errors": [
+          {
+            "type": "detection",
+            "miss_rate": 0.1,
+            "miss_model": "markov",
+            "miss_mean_s": 0.5,
+            "sensor_period_s": 0.05,
+            "lost_target": "vanish",
+            "lost_target_motion": "live"
+          }
+        ]
+      },
+      "seeds": 100
+    },
+    {
+      "name": "example_aeb_spatial",
+      "set": {
+        "controller": "example_aeb",
+        "errors": [
+          {
+            "type": "detection_spatial_v1",
+            "base_miss_rate": 0.1,
+            "range_start_m": 20.0,
+            "angle_start_deg": 5.0,
+            "range_slope_per_m": 0.0025,
+            "angle_slope_per_deg": 0.005,
+            "recovery_range_decay_per_m": 0.06931471805599453,
+            "recovery_angle_decay_per_deg": 0.06931471805599453,
+            "miss_mean_s": 0.5,
+            "sensor_period_s": 0.05
+          }
+        ]
+      },
+      "seeds": 100
+    }
+  ]
+}

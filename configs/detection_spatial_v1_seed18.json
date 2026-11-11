@@ -1,0 +1,20 @@
+{
+  "scenario": "gidas_1549178",
+  "controller": "hidrive",
+  "seed": 18,
+  "dt_s": 0.01,
+  "errors": [
+    {
+      "type": "detection_spatial_v1",
+      "base_miss_rate": 0.1,
+      "range_start_m": 20.0,
+      "angle_start_deg": 5.0,
+      "range_slope_per_m": 0.0025,
+      "angle_slope_per_deg": 0.005,
+      "recovery_range_decay_per_m": 0.06931471805599453,
+      "recovery_angle_decay_per_deg": 0.06931471805599453,
+      "miss_mean_s": 0.5,
+      "sensor_period_s": 0.05
+    }
+  ]
+}

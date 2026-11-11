@@ -22,6 +22,7 @@ def mix(x):
 
 
 def markov_draw(seed, sequence, ident, initial):
+    """Draw a uniform random number in [0,1) for a given frame and target ID."""
     domain = INITIAL_DOMAIN if initial else TRANSITION_DOMAIN
     key = mix(seed) ^ mix(sequence) ^ mix(ident + ID_OFFSET) ^ mix(domain)
     return (mix(key) >> 11) * TO_UNIT
@@ -86,6 +87,7 @@ def wrong_class_steps(factors, seed, ident, dt_s, steps):
 
 
 def check_period(period_s, mean_s, dt_s):
+    """Check time settings for Markov dropout. Raises ValueError if invalid."""
     if abs(period_s / dt_s - round(period_s / dt_s)) > 1e-9:
         raise ValueError('sensor_period_s must be a whole number of time steps')
     if mean_s < period_s:
