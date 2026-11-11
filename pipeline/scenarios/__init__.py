@@ -4,8 +4,12 @@ To add one, put the .xosc and its .xodr (same name) in data/ and add a line to s
 - an ego ("ego" in scenarios.json, default object_1) with an ObjectController and an ActivateControllerAction in Init;
 - a storyboard StopTrigger with a SimulationTimeCondition (rule greaterThan).
 The IDs gidas_* keep the names of earlier results; the data are TASC data.
+
+Scenarios imported with "python -m pipeline import-tasc" live in local/ (not in Git, see tasc.py). They do not join
+the default set of a grid; name them, or use patterns such as "tasc_car_*".
 """
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from functools import lru_cache
 import math
 from pathlib import Path
@@ -14,6 +18,7 @@ import xml.etree.ElementTree as ET
 from ..common import read_json
 
 FOLDER = Path(__file__).resolve().parent
+LOCAL = FOLDER / 'local'
 
 
 @dataclass(frozen=True)
@@ -55,8 +60,8 @@ class Scenario:
         return {p.get('name'): p.get('value') for p in properties.findall('Property')} if properties is not None else {}
 
 
-def load(key, entry):
-    source = FOLDER / 'data' / entry['file']
+def load(key, entry, folder=FOLDER / 'data'):
+    source = folder / entry['file']
     root = ET.parse(source).getroot()
     names = [item.get('name') for item in root.findall('./Entities/ScenarioObject')]
     ego = entry.get('ego', 'object_1')
@@ -73,12 +78,51 @@ def load(key, entry):
 
 @lru_cache(maxsize=None)
 def all_scenarios():
+    """The shared scenarios, the default set of a grid."""
     return read_json(FOLDER / 'scenarios.json')
 
 
+def local_scenarios(folder=None):
+    """Imported scenarios in local/, or {} when none were imported."""
+    path = Path(folder or LOCAL) / 'scenarios.json'
+    return read_json(path) if path.is_file() else {}
+
+
+def known():
+    """Every scenario: {key: (entry, folder)}, shared first."""
+    found = {key: (entry, FOLDER / 'data') for key, entry in all_scenarios().items()}
+    for key, entry in local_scenarios().items():
+        if key in found:
+            raise ValueError(f'{key}: a local scenario has the name of a shared one.')
+        found[key] = (entry, Path(LOCAL))
+    return found
+
+
+def match(names):
+    """Scenario names with patterns (*, ?) expanded in sorted order; plain names stay as given."""
+    found = list(known()) if any('*' in name or '?' in name for name in names) else []
+    result = []
+    for name in names:
+        if '*' in name or '?' in name:
+            hits = sorted(key for key in found if fnmatchcase(key, name))
+            if not hits:
+                raise ValueError(f'No scenario matches {name!r}. Import local scenarios with "python -m pipeline import-tasc".')
+            result += [key for key in hits if key not in result]
+        elif name not in result:
+            result.append(name)
+    return result
+
+
 @lru_cache(maxsize=None)
-def get(key):
-    entries = all_scenarios()
+def cached(key, local):
+    entries = known()
     if key not in entries:
-        raise ValueError(f'Unknown scenario {key!r}. Available: {", ".join(entries)}')
-    return load(key, entries[key])
+        shared = ', '.join(all_scenarios())
+        extra = f' and {len(entries) - len(all_scenarios())} local ones' if len(entries) > len(all_scenarios()) else ''
+        raise ValueError(f'Unknown scenario {key!r}. Available: {shared}{extra}.')
+    entry, folder = entries[key]
+    return load(key, entry, folder)
+
+
+def get(key):
+    return cached(key, str(LOCAL))

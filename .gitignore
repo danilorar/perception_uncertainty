@@ -18,3 +18,5 @@ esmini-demo/*
 # Pipeline: compiled esmini and results stay local
 runtime/
 output/
+# Scenarios imported with import-tasc stay local (teacher data)
+pipeline/scenarios/local/

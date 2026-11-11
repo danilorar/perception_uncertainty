@@ -1,6 +1,6 @@
 """Many simulations from one JSON file. See README.md, "Run a grid".
 
-{"name": "...", "scenarios": [...], "base": {...},
+{"name": "...", "scenarios": [... names or patterns such as "tasc_car_*"], "base": {...},
  "groups": [{"name": "...", "set": {...}, "vary": {"key": [values]}, "seeds": 30 | {"first": 50, "count": 50} | [1, 2]}]}
 
 Every combination of the "vary" values runs on every scenario with every seed. Keys may be dotted;
@@ -76,7 +76,8 @@ def expand(grid):
         raise ValueError('Unknown grid settings: ' + ', '.join(sorted(extra)))
     groups = grid.get('groups') or [{'name': 'main', **{k: grid[k] for k in ('set', 'vary', 'seeds') if k in grid}}]
     jobs = []
-    for scenario, group in itertools.product(grid.get('scenarios') or list(scenarios.all_scenarios()), groups):
+    names = scenarios.match(grid['scenarios']) if grid.get('scenarios') else list(scenarios.all_scenarios())
+    for scenario, group in itertools.product(names, groups):
         vary = group.get('vary', {})
         for levels in itertools.product(*vary.values()):
             levels = dict(zip(vary, levels))

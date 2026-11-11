@@ -106,7 +106,8 @@ commit.
 }
 ```
 
-Every combination of the `vary` values runs on every scenario with every seed. Without `scenarios`, all scenarios run.
+Every combination of the `vary` values runs on every scenario with every seed. Without `scenarios`, the three shared
+scenarios run. `scenarios` also takes patterns such as `"tasc_car_*"` for imported TASC cases (see below).
 A key like `errors.detection.miss_rate` changes one setting of the entry with that `name` or `type`; the entry must
 already be in the list, from `base` or `set`. A `set` of `"errors"` replaces the whole list.
 `seeds` is a count (from 0), a range, or a list like `[1, 2]`; without it, seed 0 runs.
@@ -167,11 +168,15 @@ AGENTS.md           rules for AI agents (CLAUDE.md loads it for Claude Code)
 ```
 
 Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`, `PerceptionModels.pdf`, `esmini`,
-`requirements.txt`. Created locally and not in Git: `runtime/` (compiled esmini), `output/` (results).
+`requirements.txt`. Created locally and not in Git: `runtime/` (compiled esmini), `output/` (results),
+`pipeline/scenarios/local/` (imported TASC cases).
 
 ## Good to know
 
 - `gidas_*` are the three scenario IDs. The data are TASC data, even where a file says GIDAS.
+- The teacher's TASC case folders (`Cut-in`, `Rear-end car-car`, `Rear-end car-cyclist`, each with `Xosc/` and `Xodr/`)
+  are imported with `python -m pipeline import-tasc <folder>`. They become `tasc_car_*`, `tasc_cutin_*` and
+  `tasc_cyclist_*` in `pipeline/scenarios/local/`, outside Git; `import_report.csv` there lists skipped cases and why.
 - The course does not allow a Kalman filter, so controllers get the observations directly.
 - The same seed gives the same result on the same machine. Windows and macOS may differ slightly.
 - macOS was tested on a cloud Mac with no display, so `replay` has not been tried there yet.

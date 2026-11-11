@@ -83,6 +83,88 @@ class ScenarioTests(unittest.TestCase):
         self.assertNotIn('timeGap', properties)
 
 
+def canonical(path):
+    """A scenario file as comparable bytes: no whitespace, no road path."""
+    root = ET.parse(path).getroot()
+    root.find('./RoadNetwork/LogicFile').set('filepath', '')
+    for element in root.iter():
+        element.text = (element.text or '').strip() or None
+        element.tail = None
+    return ET.tostring(root)
+
+
+class TascImportTests(unittest.TestCase):
+    """The teacher's case files lack the controller and, for cut-in, the stop trigger; see scenarios/tasc.py."""
+    SHARED = scenarios.FOLDER / 'data' / 'C_original_1554431.xosc'
+
+    def case(self, folder, group, *, swap=False, overlap=False, no_stop=False):
+        """Write the shared file 1554431 in the teacher's format into <folder>/<group>/."""
+        from pipeline.scenarios import tasc
+        tree = ET.parse(self.SHARED)
+        root = tree.getroot()
+        ego = root.find('./Entities/ScenarioObject[@name="object_1"]')
+        ego.remove(ego.find('ObjectController'))
+        for holder in root.iter('PrivateAction'):
+            for action in holder.findall('ControllerAction'):
+                holder.remove(action)
+        if swap:
+            tasc.swap_roles(root)
+        if overlap:
+            groups = list(root.iter('ManeuverGroup'))
+            polylines = [group.find('.//Polyline') for group in groups]
+            parent = groups[1].find('.//Shape')
+            parent.remove(polylines[1])
+            parent.append(polylines[0])
+        if no_stop:
+            stop = root.find('./Storyboard/StopTrigger')
+            for child in list(stop):
+                stop.remove(child)
+        for sub in ('Xosc', 'Xodr'):
+            (folder / group / sub).mkdir(parents=True, exist_ok=True)
+        tree.write(folder / group / 'Xosc' / self.SHARED.name)
+        shutil.copyfile(self.SHARED.with_suffix('.xodr'), folder / group / 'Xodr' / 'C_original_1554431.xodr')
+
+    def imported(self, **kind):
+        from pipeline.scenarios import tasc
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.case(folder, kind.pop('group', 'Rear-end car-car'), **kind)
+        rows = tasc.import_folder(folder, folder / 'local')
+        return folder / 'local', rows
+
+    def test_conversion_restores_the_shared_file(self):
+        local, rows = self.imported()
+        self.assertEqual([(row['key'], row['status'], row['swapped']) for row in rows], [('tasc_car_1554431', 'imported', False)])
+        self.assertEqual(canonical(local / 'tasc_car_1554431.xosc'), canonical(self.SHARED))
+        self.assertEqual((local / 'tasc_car_1554431.xodr').read_bytes(), self.SHARED.with_suffix('.xodr').read_bytes())
+
+    def test_rear_vehicle_becomes_the_ego(self):
+        local, rows = self.imported(swap=True)
+        self.assertTrue(rows[0]['swapped'])
+        self.assertEqual(canonical(local / 'tasc_car_1554431.xosc'), canonical(self.SHARED))
+
+    def test_cut_in_keeps_object_1_and_gets_a_stop_trigger(self):
+        local, rows = self.imported(group='Cut-in', swap=True, no_stop=True)
+        self.assertEqual((rows[0]['key'], rows[0]['swapped'], rows[0]['stop_trigger_added']), ('tasc_cutin_1554431', False, True))
+        stop = ET.parse(local / 'tasc_cutin_1554431.xosc').getroot().find('./Storyboard/StopTrigger//SimulationTimeCondition')
+        self.assertEqual((stop.get('rule'), stop.get('value')), ('greaterThan', '10.0'))
+
+    def test_boxes_overlapping_from_the_start_are_skipped(self):
+        local, rows = self.imported(overlap=True)
+        self.assertEqual((rows[0]['status'], rows[0]['reason']), ('skipped', 'the boxes overlap from the start'))
+        self.assertEqual(read_json(local / 'scenarios.json'), {})
+
+    def test_local_scenarios_load_but_stay_out_of_the_default_set(self):
+        local, _ = self.imported()
+        with mock.patch.object(scenarios, 'LOCAL', local):
+            scenario = scenarios.get('tasc_car_1554431')
+            self.assertEqual((scenario.ego, scenario.stop_time_s), ('object_1', 10.0))
+            self.assertEqual(scenarios.match(['gidas_1549178', 'tasc_car_*']), ['gidas_1549178', 'tasc_car_1554431'])
+            self.assertEqual({job['scenario'] for job in grid.expand({'seeds': 1})}, set(scenarios.all_scenarios()))
+            self.assertEqual([job['scenario'] for job in grid.expand({'scenarios': ['tasc_*']})], ['tasc_car_1554431'])
+            with self.assertRaises(ValueError):
+                scenarios.match(['tasc_cyclist_*'])
+
+
 class GridTests(unittest.TestCase):
     def test_every_combination_runs(self):
         jobs = grid.expand({'scenarios': ['gidas_1549178'], 'base': {'errors': [{'type': 'ou'}, {'type': 'detection'}]},

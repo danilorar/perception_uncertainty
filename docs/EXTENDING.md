@@ -79,3 +79,7 @@ Put the `.xosc` and its `.xodr` (same name) in `pipeline/scenarios/data/` and ad
 
 - an ego (default `object_1`) with an `ObjectController` and an `ActivateControllerAction` in `Init`;
 - a storyboard `StopTrigger` with a `SimulationTimeCondition`.
+
+The teacher's TASC case files lack both. `python -m pipeline import-tasc <folder>` adds them (HiDrive properties as
+in the shared files, a 10 s stop), makes the striking vehicle `object_1`, skips cases whose boxes overlap from the
+start, and writes the result to `pipeline/scenarios/local/`, which is not in Git. See `pipeline/scenarios/tasc.py`.
