@@ -1,0 +1,6 @@
+{
+  "name": "tasc_baseline",
+  "description": "No error on every imported TASC case and the three shared scenarios: which cases does HiDrive avoid with ideal perception, and do the converted 1554254 and 1554431 match the shared files? 139 runs.",
+  "scenarios": ["gidas_*", "tasc_*"],
+  "groups": [{"name": "no_error", "set": {"errors": []}, "seeds": [1]}]
+}
