@@ -1,0 +1,19 @@
+{
+  "name": "size_bearing_smoke",
+  "description": "Integration check only: baseline, neutral and assumed size-bearing errors. 9 runs, one seed per cell; existing rear-end scenarios do not validate large azimuths.",
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}},
+    {"name": "neutral", "set": {"errors": [{"type": "size_bearing"}]}},
+    {"name": "demo", "set": {"errors": [{
+      "type": "size_bearing",
+      "length_mu": [0.0, -0.01, -0.02, -0.005],
+      "width_mu": [0.0, -0.015, -0.03, -0.01],
+      "length_sigma_ref": 0.02,
+      "length_sigma_log": [0.0, 0.2, 0.5, 0.1],
+      "width_sigma_ref": 0.03,
+      "width_sigma_log": [0.0, 0.2, 0.7, 0.1],
+      "length_width_correlation": 0.3,
+      "parameter_source": "DEMONSTRATION ONLY: assumed sensitivity parameters, not fitted sensor data"
+    }]}}
+  ]
+}
