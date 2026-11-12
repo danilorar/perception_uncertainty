@@ -123,7 +123,7 @@ class OuTests(unittest.TestCase):
 
 class SettingsTests(unittest.TestCase):
     def test_registry_finds_every_plugin_and_no_helper(self):
-        self.assertEqual(set(errors.all_plugins()), {'detection', 'identification', 'ou', 'size', 'template'})
+        self.assertEqual(set(errors.all_plugins()), {'detection', 'identification', 'ou', 'size', 'size_bearing', 'template'})
 
     def test_defaults_are_filled_in(self):
         entries = config([{'type': 'detection'}, {'type': 'size', 'name': 'big', 'scale': 2}])['errors']

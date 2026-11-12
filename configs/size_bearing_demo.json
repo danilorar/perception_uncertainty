@@ -1,0 +1,16 @@
+{
+  "scenario": "gidas_1549178",
+  "seed": 0,
+  "errors": [{
+    "type": "size_bearing",
+    "length_mu": [0.0, -0.01, -0.02, -0.005],
+    "width_mu": [0.0, -0.015, -0.03, -0.01],
+    "length_sigma_ref": 0.02,
+    "length_sigma_log": [0.0, 0.2, 0.5, 0.1],
+    "width_sigma_ref": 0.03,
+    "width_sigma_log": [0.0, 0.2, 0.7, 0.1],
+    "correlation_time_s": 0.5,
+    "length_width_correlation": 0.3,
+    "parameter_source": "DEMONSTRATION ONLY: assumed sensitivity parameters, not fitted sensor data"
+  }]
+}

@@ -127,6 +127,7 @@ plugin gets the result of the one before it, so the order matters. To use one ty
 | Type | What the controller gets | Settings (default) |
 |---|---|---|
 | `size` | range + (scale - 1) * true range + bias | `scale` (1.0), `bias_m` (0.0) |
+| `size_bearing` | physical length/width estimates conditional on sensor distance and azimuth | neutral defaults; [model, coefficients and examples](docs/SIZE_BEARING.md) |
 | `identification` | in wrong-class frames: range + (wrong_scale - 1) * true range + wrong_bias; `size` skips those frames | `wrong_rate` (0), `wrong_mean_s` (0.5), `wrong_scale` (1.0), `wrong_bias_m` (0), `sensor_period_s` (0.05) |
 | `ou` | range + a correlated error that grows with distance | `mae_pct` (5.0, mean error at `reference_range_m`), `correlation_time_s` (0.5), `zero_range_m` (3), `reference_range_m` (100) |
 | `detection` | in lost frames: no target, or a predicted range | `miss_rate` (0), `miss_model` (`markov` or `iid`), `miss_mean_s` (0.5), `sensor_period_s` (0.05), `lost_target` (`vanish` or `predict`), `lost_target_motion` (`live` or `frozen`), `lost_target_distance` (`frozen_difference` or `frozen_object`) |

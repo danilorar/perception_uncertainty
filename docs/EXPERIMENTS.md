@@ -22,6 +22,7 @@ so this file is the shared record of what was run and what it showed.
 | Grid | Question | Runs | Date run | Machine | Main result | Verdict |
 |---|---|---|---|---|---|---|
 | `smoke` | Does the pipeline work end to end? | 6 | | | | |
+| `size_bearing_smoke` | Does the physical-size plugin pass through neutrally and run with assumed distance/azimuth coefficients? | 9 | 2026-11-12 | Windows 11 x64 | 9 completed; neutral ego outputs equal all 3 references; 6 road-geometry warnings | Integration passed; coefficients uncalibrated |
 | `range_factors` | Size, identification, detection and OU errors, each alone: which matter? | 1899 | | | | |
 | `detection_seeds_50_99` | Extra seeds 50–99 for the detection groups of `range_factors` | 600 | | | | |
 | `ou_size` | How large must the OU error be before safety changes? | 282 | | | | |
@@ -29,5 +30,16 @@ so this file is the shared record of what was run and what it showed.
 | `lost_target` | What the vehicle gets while the target is lost (vanish / predict / frozen) | 3000 | | | | |
 
 ## Notes per grid
+
+### size_bearing_smoke
+
+Preregistered decision rule (2026-11-12): every baseline/neutral/demo run must complete;
+the neutral controller outputs must equal the matching baseline outputs. Perception
+logs must contain applied physical dimensions, and demo dimensions must differ from
+truth. This checks integration only: current rear-end scenarios do not cover large
+azimuths, and one seed per cell cannot establish a collision probability. Assumed demo
+coefficients and model details are in SIZE_BEARING.md. Separately, the integration test
+must show that increased perceived length reaches the example AEB and changes its
+braking time while true dimensions remain unchanged.
 <!-- Optional: one short section per grid with the decision rule (written before the run),
      the key table, and a link to plots. Delete this comment when the first one is added. -->
