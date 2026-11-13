@@ -29,7 +29,7 @@ TITLES = {'cutin': 'TASC cut-in', 'car': 'TASC car-car', 'cyclist': 'TASC car-cy
 # time as tasc_bicycle_*, object_2 shaped like this. Assumed size (the files hold none); the model ships with esmini.
 # The box stays centred on the trajectory point, as in the files.
 BICYCLE = {'category': 'bicycle', 'length': '1.8', 'width': '0.6', 'height': '1.7', 'center_z': '0.85',
-           'model': '../models/cyclist.osgb'}
+           'model': '../models/cyclist.osgb', 'model_id': '9'}  # the replayer draws by model_id (resources/model_ids.txt)
 # As in the three shared scenario files (data/C_original_*.xosc).
 CONTROLLER = 'HiDriveController'
 PROPERTIES = (('timeGap', '1.0'), ('mode', 'additive'), ('ADF_enabled', 'true'), ('Speed_limit', '100'))
@@ -132,6 +132,9 @@ def make_bicycle(root, name='object_2'):
     model = vehicle.find('./Properties/File')
     if model is not None:
         model.set('filepath', BICYCLE['model'])
+    model_id = vehicle.find('./Properties/Property[@name="model_id"]')
+    if model_id is not None:
+        model_id.set('value', BICYCLE['model_id'])
 
 
 def convert(xosc, group, target, *, skip_ids=(), bicycle=False):
