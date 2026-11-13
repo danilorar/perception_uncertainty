@@ -129,9 +129,24 @@ class TascImportTests(unittest.TestCase):
     def imported(self, **kind):
         from pipeline.scenarios import tasc
         folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        bicycle = kind.pop('bicycle', False)
         self.case(folder, kind.pop('group', 'Rear-end car-car'), **kind)
-        rows = tasc.import_folder(folder, folder / 'local')
+        rows = tasc.import_folder(folder, folder / 'local', bicycle=bicycle)
         return folder / 'local', rows
+
+    def test_bicycle_copy_reshapes_only_object_2(self):
+        local, rows = self.imported(group='Rear-end car-cyclist', bicycle=True)
+        self.assertEqual([(row['key'], row['status']) for row in rows],
+                         [('tasc_cyclist_1554431', 'imported'), ('tasc_bicycle_1554431', 'imported')])
+        car = ET.parse(local / 'tasc_cyclist_1554431.xosc').getroot()
+        bike = ET.parse(local / 'tasc_bicycle_1554431.xosc').getroot()
+        shape = lambda root, name: (  # noqa: E731
+            root.find(f'./Entities/ScenarioObject[@name="{name}"]/Vehicle').get('vehicleCategory'),
+            root.find(f'./Entities/ScenarioObject[@name="{name}"]//Dimensions').attrib)
+        self.assertEqual(shape(bike, 'object_1'), shape(car, 'object_1'))
+        self.assertEqual(shape(bike, 'object_2'), ('bicycle', {'width': '0.6', 'length': '1.8', 'height': '1.7'}))
+        self.assertEqual(shape(car, 'object_2')[0], 'car')
+        self.assertEqual(read_json(local / 'scenarios.json')['tasc_bicycle_1554431']['group'], 'bicycle')
 
     def test_conversion_restores_the_shared_file(self):
         local, rows = self.imported()

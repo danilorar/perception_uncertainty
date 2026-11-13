@@ -24,7 +24,12 @@ from pathlib import Path
 from ..common import read_json, write_json
 
 GROUPS = {'Cut-in': 'cutin', 'Rear-end car-car': 'car', 'Rear-end car-cyclist': 'cyclist'}
-TITLES = {'cutin': 'TASC cut-in', 'car': 'TASC car-car', 'cyclist': 'TASC car-cyclist'}
+TITLES = {'cutin': 'TASC cut-in', 'car': 'TASC car-car', 'cyclist': 'TASC car-cyclist', 'bicycle': 'TASC car-bicycle'}
+# The cyclist files give object_2 the same car box as the ego. With bicycle=True the cyclist cases are written a second
+# time as tasc_bicycle_*, object_2 shaped like this. Assumed size (the files hold none); the model ships with esmini.
+# The box stays centred on the trajectory point, as in the files.
+BICYCLE = {'category': 'bicycle', 'length': '1.8', 'width': '0.6', 'height': '1.7', 'center_z': '0.85',
+           'model': '../models/cyclist.osgb'}
 # As in the three shared scenario files (data/C_original_*.xosc).
 CONTROLLER = 'HiDriveController'
 PROPERTIES = (('timeGap', '1.0'), ('mode', 'additive'), ('ADF_enabled', 'true'), ('Speed_limit', '100'))
@@ -116,12 +121,31 @@ def add_stop_trigger(root):
     return True
 
 
-def convert(xosc, group, target, *, skip_ids=()):
-    """Convert one case file into `target`; returns a report row (status 'imported' or 'skipped')."""
+def make_bicycle(root, name='object_2'):
+    """Give `name` the BICYCLE category, box and model."""
+    vehicle = root.find(f'./Entities/ScenarioObject[@name="{name}"]/Vehicle')
+    vehicle.set('vehicleCategory', BICYCLE['category'])
+    vehicle.find('./BoundingBox/Center').set('z', BICYCLE['center_z'])
+    box = vehicle.find('./BoundingBox/Dimensions')
+    for side in ('length', 'width', 'height'):
+        box.set(side, BICYCLE[side])
+    model = vehicle.find('./Properties/File')
+    if model is not None:
+        model.set('filepath', BICYCLE['model'])
+
+
+def convert(xosc, group, target, *, skip_ids=(), bicycle=False):
+    """Convert one case file into `target`; returns a report row (status 'imported' or 'skipped').
+
+    bicycle=True writes the case as tasc_bicycle_* with object_2 as a bicycle. The checks below still use the boxes
+    of the file, so the same cases pass; 'recorded_contact' then tells whether the recorded paths still touch.
+    """
     case = case_id(xosc)
+    if bicycle:
+        group = 'bicycle'
     key = f'tasc_{group}_{case}'
     row = {'key': key, 'group': group, 'case': case, 'source': xosc.name, 'status': 'skipped', 'reason': '',
-           'stop_trigger_added': False}
+           'stop_trigger_added': False, 'recorded_contact': ''}
     if case in skip_ids:
         row['reason'] = 'also in Cut-in, where its roles are set'
         return row
@@ -146,6 +170,10 @@ def convert(xosc, group, target, *, skip_ids=()):
     if group != 'cutin' and not two_ahead:
         row['reason'] = 'object_2 strikes from behind; the road follows object_1'
         return row
+    row['recorded_contact'] = True
+    if bicycle:
+        make_bicycle(root)
+        row['recorded_contact'] = first_contact(root) is not None
     add_controller(root)
     row['stop_trigger_added'] = add_stop_trigger(root)
     root.find('./RoadNetwork/LogicFile').set('filepath', f'{key}.xodr')
@@ -157,8 +185,11 @@ def convert(xosc, group, target, *, skip_ids=()):
     return row
 
 
-def import_folder(folder, target):
-    """Import every group folder found in `folder` into `target`; returns the report rows."""
+def import_folder(folder, target, *, bicycle=False):
+    """Import every group folder found in `folder` into `target`; returns the report rows.
+
+    bicycle=True also writes each cyclist case as tasc_bicycle_* (see BICYCLE); the tasc_cyclist_* copies stay.
+    """
     folder, target = Path(folder), Path(target)
     found = {name: folder / name for name in GROUPS if (folder / name / 'Xosc').is_dir()}
     if not found:
@@ -169,6 +200,8 @@ def import_folder(folder, target):
         group = GROUPS[name]
         for xosc in sorted((path / 'Xosc').glob('*.xosc')):
             rows.append(convert(xosc, group, target, skip_ids=cutin if group == 'car' else ()))
+            if bicycle and group == 'cyclist':
+                rows.append(convert(xosc, group, target, bicycle=True))
     target.mkdir(parents=True, exist_ok=True)
     registry_path = target / 'scenarios.json'
     registry = read_json(registry_path) if registry_path.is_file() else {}
@@ -182,7 +215,8 @@ def import_folder(folder, target):
             for suffix in ('.xosc', '.xodr'):
                 (target / f'{row["key"]}{suffix}').unlink(missing_ok=True)
     write_json(registry_path, dict(sorted(registry.items())))
-    fields = ['key', 'group', 'case', 'source', 'status', 'reason', 'stop_trigger_added', 'road', 'source_sha1']
+    fields = ['key', 'group', 'case', 'source', 'status', 'reason', 'stop_trigger_added', 'recorded_contact', 'road',
+              'source_sha1']
     with (target / 'import_report.csv').open('w', encoding='utf-8', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()

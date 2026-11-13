@@ -45,7 +45,7 @@ def command_list(_):
 def command_import_tasc(args):
     from . import scenarios
     from .scenarios.tasc import import_folder
-    rows = import_folder(args.folder, scenarios.LOCAL)
+    rows = import_folder(args.folder, scenarios.LOCAL, bicycle=args.bicycle)
     for row in rows:
         if row['status'] != 'imported':
             print(f'skipped {row["group"]} {row["case"]}: {row["reason"]}')
@@ -90,6 +90,8 @@ def main():
 
     tasc = commands.add_parser('import-tasc', help='convert TASC case folders into local scenarios (not in Git)')
     tasc.add_argument('folder', help='folder with "Cut-in", "Rear-end car-car" and/or "Rear-end car-cyclist"')
+    tasc.add_argument('--bicycle', action='store_true',
+                      help='also write each cyclist case as tasc_bicycle_*, with object_2 as a bicycle-sized box')
     tasc.set_defaults(function=command_import_tasc)
 
     replay = commands.add_parser('replay', help='watch a finished single run in the esmini replayer')

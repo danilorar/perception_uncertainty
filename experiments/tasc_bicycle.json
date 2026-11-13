@@ -1,0 +1,13 @@
+{
+  "name": "tasc_bicycle",
+  "description": "Does a bicycle-sized target change what HiDrive does on the 24 TASC cyclist cases? The same cases as tasc_cyclist_*, with object_2 as an assumed 1.8 x 0.6 x 1.7 m bicycle box instead of the 5.0 x 1.8 m car box of the files (import-tasc --bicycle). Groups and levels as in tasc_tolerance, so each case compares with its car-box run. Sensitivity levels, not sensor values. 1080 runs.",
+  "scenarios": ["tasc_bicycle_*"],
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}, "seeds": [1]},
+    {"name": "ou", "set": {"errors": [{"type": "ou"}]}, "vary": {"errors.ou.mae_pct": [5.0, 10.0, 20.0]},
+     "seeds": {"first": 1, "count": 10}},
+    {"name": "bias_only", "set": {"errors": [{"type": "ou", "mae_pct": 0.0}]},
+     "vary": {"errors.ou.bias_pct": [5.0, 10.0, 15.0, 20.0]}, "seeds": [1]},
+    {"name": "detection", "set": {"errors": [{"type": "detection", "miss_rate": 0.1}]}, "seeds": {"first": 1, "count": 10}}
+  ]
+}

@@ -177,6 +177,8 @@ Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`,
 - The teacher's TASC case folders (`Cut-in`, `Rear-end car-car`, `Rear-end car-cyclist`, each with `Xosc/` and `Xodr/`)
   are imported with `python -m pipeline import-tasc <folder>`. They become `tasc_car_*`, `tasc_cutin_*` and
   `tasc_cyclist_*` in `pipeline/scenarios/local/`, outside Git; `import_report.csv` there lists skipped cases and why.
+  The cyclist files define the cyclist as a car; add `--bicycle` to also get `tasc_bicycle_*`, the same cases with a
+  bicycle-sized box.
 - The course does not allow a Kalman filter, so controllers get the observations directly.
 - The same seed gives the same result on the same machine. Windows and macOS may differ slightly.
 - macOS was tested on a cloud Mac with no display, so `replay` has not been tried there yet.

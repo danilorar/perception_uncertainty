@@ -85,7 +85,7 @@ so this file is the shared record of what was run and what it showed.
   exists, so 17/400 is with OU only.
 - OU enters only as the error of the last seen reading and stays constant through a miss.
 
-### TASC cases (`tasc_baseline`, `tasc_tolerance`)
+### TASC cases (`tasc_baseline`, `tasc_tolerance`, `tasc_bicycle`)
 - Source: the teacher's upload of 2026-11-11 (Cut-in 7, Rear-end car-car 110, Rear-end car-cyclist 32 files), imported
   with `python -m pipeline import-tasc`. The files stay out of Git (teacher data, public repository); each registry
   entry in `pipeline/scenarios/local/scenarios.json` keeps the SHA-1 of its source file.
@@ -94,8 +94,19 @@ so this file is the shared record of what was run and what it showed.
   and have their own road), and 6 cyclist cases where object_2, the car, strikes the cyclist object_1 from behind.
 - Those 6 were first run with the trajectories swapped: in 5 the ego jumped about 10 m along the road at brake onset.
   The road follows object_1's path, so a swap needs a road along the new ego's path; they are skipped until one exists.
-- Cyclists are a 5.0 x 1.8 m car box in the files, so the cyclist results are about a slow target, not about a
-  bicycle-sized one.
+- Cyclists are a 5.0 x 1.8 m car box in the files (category `car`, model `car_white.osgb`, the same as the ego), so
+  the `tasc_cyclist_*` results are about a slow car-sized target.
+- `tasc_bicycle` (2026-11-13, 1080 runs, none failed): `import-tasc --bicycle` writes the same 24 cases a second time
+  as `tasc_bicycle_*`, with object_2 as category `bicycle`, a 1.8 x 0.6 x 1.7 m box and `cyclist.osgb`. The size is
+  assumed; the files hold none. The box stays centred on the trajectory point. Groups and levels are those of
+  `tasc_tolerance`, so each case compares with its car-box run.
+  - HiDrive brakes for the bicycle as for the car. Without error 4 of 24 crash with either box, the same 4 cases
+    (`1554559`, `1555622`, `1588450`, `1598752`), 3–4 km/h slower with the bicycle box.
+  - Crashes, car box against bicycle box: OU 5% 40/240 and 40/240, OU 10% 35/240 and 37/240, OU 20% 27/240 and
+    28/240, bias +5 to +20% 4/24 at every level with both, 10% misses 44/240 and 45/240.
+  - In the 20 cases that are safe without error, the minimum gap changes by −0.18 to +0.23 m: HiDrive brakes on the
+    distance to the box, so a shorter box moves the stopping point, not the gap.
+  - These runs were made before the importer change was committed (the grid notes "files differ from commit c9ecdde").
 - Cut-in: contact is at the side, with the cutting car faster than the ego, and HiDrive never triggers in any of the 5
   cases. A range error cannot change them; a lateral or lane-assignment error with a controller that reacts to cut-ins
   could.
